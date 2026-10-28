@@ -33,6 +33,12 @@ namespace CsAim.Player
         public float zoomSensitivityRatio = 1.0f;  // CS2 "zoom_sensitivity_ratio"
         public bool invertY;
         public float fov4by3 = 90f;                // CS2 fov is fixed at 90 (4:3 horizontal)
+        public float dpi = 800f;                   // mouse DPI - only for eDPI / cm per 360 readouts
+
+        /// <summary>eDPI = sensitivity x DPI, the usual way to compare settings between players.</summary>
+        public float EDpi => sensitivity * dpi;
+        /// <summary>Mouse travel for a full 360 turn: 360 / (sens * 0.022) counts, / DPI inches, * 2.54 cm.</summary>
+        public float CmPer360 => sensitivity > 0f && dpi > 0f ? 360f / (sensitivity * CsConstants.MYaw) / dpi * 2.54f : 0f;
 
         public Camera Camera { get; private set; }
         public Vector2 EyeAngles => _eyeAngles;
@@ -58,6 +64,7 @@ namespace CsAim.Player
         bool _attackPressedLatch;
         bool _jumpLatch;
         int _previousWeapon;
+        bool _blockFire;
 
         public void Init(Camera cam, List<WeaponDefinition> weapons)
         {
@@ -103,6 +110,11 @@ namespace CsAim.Player
             _move.Velocity = Vector3.zero;
             _eyeAngles = new Vector2(pitch, yaw);
         }
+
+        public void SetEyeAngles(Vector2 pitchYaw) => _eyeAngles = pitchYaw;
+
+        /// <summary>Ignore the trigger until the player lets go of it (restart after a failed attempt).</summary>
+        public void BlockFireUntilRelease() => _blockFire = true;
 
         public Vector3 EyePosition =>
             transform.position + Vector3.up * Mathf.Lerp(CsConstants.StandEyeHeight, CsConstants.DuckEyeHeight, _move.DuckAmount);
@@ -222,8 +234,10 @@ namespace CsAim.Player
                     walking = Walking,
                     duckAmount = _move.DuckAmount,
                 };
-                bool held = input && Input.GetMouseButton(0);
-                Weapon.Tick(_simTime, dt, owner, held, _attackPressedLatch);
+                bool rawHeld = input && Input.GetMouseButton(0);
+                if (!rawHeld) _blockFire = false;
+                bool held = rawHeld && !_blockFire;
+                Weapon.Tick(_simTime, dt, owner, held, _attackPressedLatch && !_blockFire);
             }
             _attackPressedLatch = false;
         }

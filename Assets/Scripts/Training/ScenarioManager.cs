@@ -9,6 +9,7 @@ namespace CsAim.Training
     public enum Scenario
     {
         SprayControl,   // the guide's drill: wall, sv_showimpacts, follow the drawing
+        RecoilPath,     // follow the drawing; leave the corridor and the spray restarts
         Flick,          // static one-taps, armoured + helmet
         Strafe,         // ADAD bots - counter-strafe, then shoot
         Peek,           // wide swings from cover
@@ -42,6 +43,8 @@ namespace CsAim.Training
         public Scenario Current { get; private set; } = Scenario.SprayControl;
         public RunStats Stats { get; private set; } = new RunStats();
         public SprayAnalyzer Spray { get; } = new SprayAnalyzer();
+        public PathTrainer Path { get; } = new PathTrainer();
+        public bool IsWallScenario => Current == Scenario.SprayControl || Current == Scenario.RecoilPath;
         public ImpactMarkers Impacts { get; private set; }
         public List<Vector2> PatternPreview { get; private set; } = new List<Vector2>();
         public bool ShowPatternOnWall = true;
@@ -55,6 +58,7 @@ namespace CsAim.Training
         readonly List<Target> _targets = new List<Target>();
         GameObject _sprayRig;
         LineRenderer _ghostLine, _idealLine;
+        Transform _nextPoint;
         Transform _wall;
         bool _wasHolding;
 
@@ -64,7 +68,7 @@ namespace CsAim.Training
             _wall = sprayWall;
             Impacts = new GameObject("Impacts").AddComponent<ImpactMarkers>();
             player.Shot += OnShot;
-            player.WeaponChanged += _ => RebuildPatternPreview();
+            player.WeaponChanged += w => { RebuildPatternPreview(); Path.Reset(w.Def.clipSize); };
             BuildSprayRig();
             RebuildPatternPreview();
             Begin(Scenario.SprayControl);
@@ -79,8 +83,10 @@ namespace CsAim.Training
             Impacts.Clear();
             _player.Weapon?.ResetSpray();
 
-            bool spray = s == Scenario.SprayControl;
+            bool spray = IsWallScenario;
             _sprayRig.SetActive(spray);
+            _nextPoint.gameObject.SetActive(s == Scenario.RecoilPath);
+            Path.Reset(_player.Weapon != null ? _player.Weapon.Def.clipSize : 30);
             _wall.gameObject.SetActive(spray);
             Spray.MinShotsToScore = Mathf.Min(10, _player.Weapon != null ? _player.Weapon.Def.clipSize : 10);
 
@@ -150,13 +156,34 @@ namespace CsAim.Training
 
             if (Current == Scenario.SprayControl)
                 Spray.OnShot(e, _player.Weapon.Def.displayName);
+            else if (Current == Scenario.RecoilPath)
+                OnPathShot(e);
+        }
+
+        void OnPathShot(in ShotEvent e)
+        {
+            var outcome = Path.OnShot(e.shot.shotIndex, e.eyeAngles, e.shot.recoilDeg, e.shot.spreadDeg, Time.time);
+            if (outcome == PathTrainer.Outcome.Continue) return;
+
+            // Attempt over (failed or done): stop the spray right now, refill, snap the view back to
+            // where the spray started and wait for the trigger to be released before the next try.
+            _player.Weapon.Interrupt();
+            _player.BlockFireUntilRelease();
+            _player.SetEyeAngles(Path.StartEye);
         }
 
         void Update()
         {
             bool holding = _player.InputEnabled && Input.GetMouseButton(0);
-            if (_wasHolding && !holding) Spray.FinishCurrent();
+            if (_wasHolding && !holding)
+            {
+                Spray.FinishCurrent();
+                if (Current == Scenario.RecoilPath) Path.OnTriggerReleased(Time.time);
+            }
+            if (!_wasHolding && holding && Current == Scenario.RecoilPath) Impacts.Clear();
             _wasHolding = holding;
+
+            if (Current == Scenario.RecoilPath) UpdateNextPoint();
 
             if (_ghostLine != null)
             {
@@ -176,6 +203,13 @@ namespace CsAim.Training
             aim.transform.SetParent(_sprayRig.transform, false);
             aim.GetComponent<Renderer>().material = Materials.Unlit(Color.white);
             aim.transform.localScale = Vector3.one * 3f;
+
+            var np = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            np.name = "NextPoint";
+            Destroy(np.GetComponent<Collider>());
+            np.transform.SetParent(_sprayRig.transform, false);
+            np.GetComponent<Renderer>().material = Materials.Unlit(new Color(1f, 0.9f, 0.1f, 0.45f));
+            _nextPoint = np.transform;
 
             _ghostLine = MakeLine("UncompensatedPattern", new Color(0.25f, 0.55f, 1f, 0.9f));
             _idealLine = MakeLine("IdealMousePath", new Color(0.2f, 1f, 0.35f, 0.9f));
@@ -204,8 +238,9 @@ namespace CsAim.Training
 
         /// <summary>
         /// Projects the pattern onto the wall from the standing eye position. Blue = where bullets
-        /// go if you don't touch the mouse. Green = the mirrored drawing your crosshair should
-        /// follow to keep every bullet on the white aim point.
+        /// go if you don't touch the mouse. Green = the mirrored drawing your screen crosshair should
+        /// follow to keep every bullet on the white aim point (the camera itself shows 45% of the
+        /// recoil, so the crosshair path is 55% of the mirrored pattern).
         /// </summary>
         void LayoutWall()
         {
@@ -223,8 +258,21 @@ namespace CsAim.Training
             {
                 Vector2 r = PatternPreview[i];
                 _ghostLine.SetPosition(i, Project(eye, r));
-                _idealLine.SetPosition(i, Project(eye, -r));
+                _idealLine.SetPosition(i, Project(eye, PathTrainer.CrosshairTarget(r)));
             }
+        }
+
+        /// <summary>Yellow square on the green line: where the crosshair must be for the next bullet,
+        /// sized to the pass/fail corridor.</summary>
+        void UpdateNextPoint()
+        {
+            if (PatternPreview.Count == 0) return;
+            int next = Path.Active ? Mathf.Clamp(_player.Weapon.ShotsFired, 0, PatternPreview.Count - 1) : 0;
+            Vector3 eye = new Vector3(0f, CsConstants.StandEyeHeight, 0f);
+            _nextPoint.position = Project(eye, PathTrainer.CrosshairTarget(PatternPreview[next])) - Vector3.forward * 0.2f;
+            _nextPoint.rotation = Quaternion.LookRotation(Vector3.forward);
+            float size = 2f * Mathf.Tan(Path.ToleranceDeg * Mathf.Deg2Rad) * SprayDistance;
+            _nextPoint.localScale = Vector3.one * size;
         }
 
         static Vector3 Project(Vector3 eye, Vector2 pitchYawDeg)

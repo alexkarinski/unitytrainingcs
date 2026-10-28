@@ -53,6 +53,7 @@ namespace CsAim.Weapons
         float _reloadEnd;
         float _now;
         bool _silencerOn = true;
+        bool _interrupted;
         bool _wasOnGround = true;
         float _lastVerticalSpeed;
         readonly ValveUniformRandomStream _rng;
@@ -81,6 +82,18 @@ namespace CsAim.Weapons
             ZoomLevel = 0;
         }
 
+        /// <summary>
+        /// Aborts the spray immediately (even mid-tick), resets recoil and refills the magazine.
+        /// Used by the path trainer to restart an attempt the moment you leave the trajectory.
+        /// </summary>
+        public void Interrupt()
+        {
+            ResetSpray();
+            Ammo = Def.clipSize;
+            _reloadEnd = 0f;
+            _interrupted = true;
+        }
+
         public void ResetSpray()
         {
             AimPunchRaw = Vector2.zero;
@@ -93,6 +106,7 @@ namespace CsAim.Weapons
         public void Tick(float now, float dt, in OwnerState owner, bool attackHeld, bool attackPressed)
         {
             _now = now;
+            _interrupted = false;
             var mode = Mode;
 
             // Landing adds a one-off penalty scaled by how hard you hit the ground.
@@ -145,7 +159,7 @@ namespace CsAim.Weapons
             {
                 FireOne(_nextAttack, mode, stateInaccuracy);
                 _nextAttack += mode.cycleTime;
-                if (!Def.isFullAuto) break;
+                if (!Def.isFullAuto || _interrupted) break;
             }
         }
 

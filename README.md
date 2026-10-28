@@ -11,7 +11,9 @@
 
 1. Unity **2022.3 LTS** (Built-in Render Pipeline). В Unity Hub: *Add project from disk*, выбрать эту папку.
 2. Открыть `Assets/Scenes/Main.unity`, нажать **Play**. Всю сцену собирает код (`SceneBootstrap`), ассеты не нужны.
-3. **Esc** → меню: выставь свою `sensitivity` из CS2. Вращение получится 1:1 с игрой.
+3. **Esc** → меню: выставь свою `sensitivity` из CS2 и DPI мыши. Вращение получится 1:1 с игрой.
+   HUD показывает eDPI и **см на 360°**, чтобы сверить ощущения с CS2. Сам DPI в расчёт поворота
+   не входит: и игра, и тренажёр считают «отсчёты мыши × сенса × 0.022».
 4. Чтобы цифры совпадали с игрой точно: **Esc → Import** и путь к
    `...\Counter-Strike Global Offensive\game\csgo\scripts\items\items_game.txt`
    (или в редакторе: *Tools → CS Aim → Import items_game.txt*). Путь запоминается.
@@ -33,6 +35,14 @@
   После каждой очереди ошибка делится так же, как в гайде:
   - **recoil error**: отдача, которую ты не погасил. Это твоя ошибка, она тренируется;
   - **spread**: случайный разброс. Его нельзя компенсировать, показан для контекста.
+- **Траектория.** Веди прицел по зелёному рисунку. Жёлтый квадрат показывает, где должен быть прицел
+  для следующей пули, а его размер равен допуску. Если пуля (без учёта случайного разброса) ушла
+  дальше допуска, очередь сразу обрывается: магазин пополняется, взгляд возвращается в стартовую
+  точку, следующая попытка начинается после отпускания ЛКМ. В режиме прогрессии сначала 10 пуль,
+  после каждого чистого прохода +5, до полного магазина. Допуск настраивается (0.25–2°, по умолчанию 0.7°,
+  это примерно радиус головы на 10 м).
+  Считается: **точность траектории** (100% = пуля ровно на линии), средняя и последняя ошибка в градусах,
+  процент пуль в цель с учётом разброса, число попыток и чистых спреев, рекорд по пулям.
 - **Flick / one-tap.** Статичные мишени в броне и шлеме, урон и хитгруппы как в CS.
 - **Strafing bots.** Боты делают ADAD на той же физике Source. Учит контр-стрейфу: HUD показывает
   скорость и порог точности (34% от максимальной), статистика считает долю выстрелов «в точной скорости».
@@ -83,6 +93,24 @@
    по строке на пулю: `pitch yaw` (вверх и вправо положительные).
    Повторный импорт `items_game.txt` твой паттерн не затирает.
 
+## Браузерная версия (GitHub Pages)
+
+Workflow `.github/workflows/pages.yml` на каждый пуш собирает WebGL через [GameCI](https://game-ci.com)
+и публикует его на Pages. Один раз в настройках репозитория:
+
+1. **Settings → Secrets and variables → Actions:** добавь `UNITY_LICENSE` (содержимое файла `Unity_lic.ulf`;
+   на Windows он лежит в `C:\ProgramData\Unity\`, появляется после входа в Unity Hub с бесплатной лицензией
+   Personal), `UNITY_EMAIL` и `UNITY_PASSWORD`.
+2. **Settings → Pages → Source:** «GitHub Actions».
+3. **Actions → WebGL to GitHub Pages → Run workflow** (или любой пуш).
+
+Локально: *Tools → CS Aim → Build WebGL (GitHub Pages)*. Сжатие в сборке выключено, потому что
+Pages не отдаёт нужный `Content-Encoding`. Шаблон `Assets/WebGLTemplates/FullWindow` запрашивает
+pointer lock с `unadjustedMovement`, то есть сырой ввод мыши без ускорения ОС (Chrome/Edge;
+остальные браузеры молча откатываются на обычный режим). В браузере работают встроенные значения
+оружия, импорт `items_game.txt` доступен только в десктопной сборке. Для максимальной точности
+ввода лучше десктопная сборка.
+
 ## Тесты
 
 Логика (ГПСЧ, парсер, движение, точность, оружие) запускается под обычным .NET, без Unity:
@@ -100,10 +128,11 @@ Assets/Scripts/
   Weapons/    AccuracyModel, RecoilTable, WeaponController
   Player/     SourceMovement, PlayerController
   Combat/     Hitbox, DamageModel
-  Training/   ScenarioManager, Target, SprayAnalyzer, ImpactMarkers
+  Training/   ScenarioManager, Target, SprayAnalyzer, PathTrainer, ImpactMarkers
   UI/         Hud
   Bootstrap/  SceneBootstrap
-Assets/Editor/  ItemsGameImportMenu
+Assets/Editor/  ItemsGameImportMenu, WebGLBuild
+Assets/WebGLTemplates/FullWindow/  страница для браузера
 Tests/          тесты под .NET
 ```
 

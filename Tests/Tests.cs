@@ -17,6 +17,44 @@ static class Tests
         return w;
     }
 
+    static void PathTests()
+    {
+        var p = new CsAim.Training.PathTrainer { ToleranceDeg = 0.7f };
+        p.Reset(30);
+        Check(p.TargetLength == 10, "progressive path starts at 10 bullets");
+
+        // Perfect compensation: mouse exactly cancels recoil for 10 bullets -> completed, length grows
+        CsAim.Training.PathTrainer.Outcome o = default;
+        for (int i = 0; i < 10; i++)
+        {
+            var recoil = new Vector2(0.6f * i, 0.1f * i);
+            o = p.OnShot(i, -recoil, recoil, new Vector2(0.2f, 0f), i * 0.1f);
+        }
+        Check(o == CsAim.Training.PathTrainer.Outcome.Completed && p.CleanSprays == 1, "perfect 10-bullet spray completes");
+        Check(p.TargetLength == 15, "clean attempt raises target to 15");
+        Check(Math.Abs(p.PathAccuracy - 100f) < 0.01f, $"perfect path accuracy 100% (got {p.PathAccuracy:0.0})");
+
+        // No compensation: bullet offset grows past tolerance -> fails and reports the bullet
+        int failedAt = -1;
+        for (int i = 0; i < 15; i++)
+        {
+            var recoil = new Vector2(0.6f * i, 0f);
+            if (p.OnShot(i, Vector2.zero, recoil, Vector2.zero, 10 + i * 0.1f) == CsAim.Training.PathTrainer.Outcome.Failed) { failedAt = i; break; }
+        }
+        Check(failedAt == 2, $"uncompensated spray fails on bullet 3 (index {failedAt}) when off by 1.2 deg");
+        Check(!p.Active && p.Attempts == 2, "failure ends attempt; next shot starts a new one");
+        Check(p.PathAccuracy < 100f && p.MeanErrorDeg > 0f, "accuracy drops after a sloppy attempt");
+
+        // Spread must not cause a fail, only the controllable part
+        var q = new CsAim.Training.PathTrainer { ToleranceDeg = 0.7f }; q.Reset(30);
+        var r0 = q.OnShot(0, Vector2.zero, Vector2.zero, new Vector2(3f, 3f), 0);
+        Check(r0 == CsAim.Training.PathTrainer.Outcome.Continue && q.OnTargetRate == 0f, "big spread: not a fail, but counted off-target");
+
+        // Crosshair target is 55% of the mirrored recoil (camera shows 45%)
+        var ct = CsAim.Training.PathTrainer.CrosshairTarget(new Vector2(4f, -2f));
+        Check(Math.Abs(ct.x + 2.2f) < 1e-4 && Math.Abs(ct.y - 1.1f) < 1e-4, $"crosshair target {ct}");
+    }
+
     static void WeaponTests()
     {
         float dt = CsConstants.TickInterval;
@@ -137,6 +175,7 @@ static class Tests
         Check(maxR <= 0.0066f + 1e-6, $"deviation within inaccuracy+spread ({maxR:0.00000})");
 
         WeaponTests();
+        PathTests();
         Console.WriteLine(fails == 0 ? "ALL PASSED" : $"{fails} FAILED");
         return fails;
     }

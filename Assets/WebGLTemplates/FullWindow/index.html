@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{{ PRODUCT_NAME }}}</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1d22; }
+    #unity-canvas { width: 100%; height: 100%; display: block; outline: none; }
+    #loader { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px;
+              align-items: center; justify-content: center; color: #ccc; font: 16px system-ui, sans-serif; }
+    #bar { width: 260px; height: 6px; background: #333; border-radius: 3px; overflow: hidden; }
+    #fill { width: 0; height: 100%; background: #4caf50; }
+  </style>
+</head>
+<body>
+  <canvas id="unity-canvas" tabindex="-1"></canvas>
+  <div id="loader">
+    <div>CS Aim Trainer: загрузка…</div>
+    <div id="bar"><div id="fill"></div></div>
+    <div style="font-size:13px;color:#888">Кликни по игре, чтобы захватить мышь. Esc открывает меню.</div>
+  </div>
+  <script>
+    // Raw mouse: ask the browser for pointer-lock deltas WITHOUT OS acceleration, so mouse
+    // counts map 1:1 like CS2's raw input. Falls back if the browser doesn't support it.
+    (function () {
+      var original = HTMLCanvasElement.prototype.requestPointerLock;
+      HTMLCanvasElement.prototype.requestPointerLock = function (options) {
+        var self = this;
+        try {
+          var r = original.call(self, Object.assign({ unadjustedMovement: true }, options || {}));
+          if (r && typeof r.catch === "function") return r.catch(function () { return original.call(self, options); });
+          return r;
+        } catch (e) {
+          return original.call(self, options);
+        }
+      };
+    })();
+  </script>
+  <script src="Build/{{{ LOADER_FILENAME }}}"></script>
+  <script>
+    createUnityInstance(document.querySelector("#unity-canvas"), {
+      dataUrl: "Build/{{{ DATA_FILENAME }}}",
+      frameworkUrl: "Build/{{{ FRAMEWORK_FILENAME }}}",
+      codeUrl: "Build/{{{ CODE_FILENAME }}}",
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
+      productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
+      productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
+    }, function (progress) {
+      document.querySelector("#fill").style.width = Math.round(progress * 100) + "%";
+    }).then(function () {
+      document.querySelector("#loader").remove();
+    }).catch(function (e) {
+      document.querySelector("#loader").textContent = "Ошибка загрузки: " + e;
+    });
+  </script>
+</body>
+</html>

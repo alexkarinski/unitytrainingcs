@@ -18,12 +18,16 @@ namespace CsAim.UI
         bool _menuOpen;
         bool _recoilCrosshair;
         bool _dynamicCrosshair = true;
-        string _sensText, _zoomText, _importPath, _importStatus = string.Empty;
+        string _sensText, _zoomText, _dpiText, _importPath, _importStatus = string.Empty;
         GUIStyle _label, _big, _box;
         Vector2 _weaponScroll;
 
         const string SensKey = "csaim.sensitivity";
         const string ZoomKey = "csaim.zoom_ratio";
+        const string DpiKey = "csaim.dpi";
+        const string ToleranceKey = "csaim.path_tolerance";
+
+        static bool IsWeb => Application.platform == RuntimePlatform.WebGLPlayer;
 
         public void Init(PlayerController player, ScenarioManager scenarios)
         {
@@ -31,6 +35,9 @@ namespace CsAim.UI
             _scenarios = scenarios;
             player.sensitivity = PlayerPrefs.GetFloat(SensKey, player.sensitivity);
             player.zoomSensitivityRatio = PlayerPrefs.GetFloat(ZoomKey, player.zoomSensitivityRatio);
+            player.dpi = PlayerPrefs.GetFloat(DpiKey, player.dpi);
+            scenarios.Path.ToleranceDeg = PlayerPrefs.GetFloat(ToleranceKey, scenarios.Path.ToleranceDeg);
+            _dpiText = player.dpi.ToString(CultureInfo.InvariantCulture);
             _sensText = player.sensitivity.ToString(CultureInfo.InvariantCulture);
             _zoomText = player.zoomSensitivityRatio.ToString(CultureInfo.InvariantCulture);
             _importPath = PlayerPrefs.GetString(WeaponLibrary.PathPrefKey, ItemsGameImporter.DefaultItemsGamePath);
@@ -51,6 +58,9 @@ namespace CsAim.UI
             // Clicking back into the game window re-captures the mouse.
             if (!_menuOpen && Cursor.lockState != CursorLockMode.Locked && Input.GetMouseButtonDown(0))
                 SetMenu(false);
+            // In a browser Esc is swallowed to release pointer lock; treat losing the lock as "open menu".
+            if (IsWeb && !_menuOpen && Cursor.lockState != CursorLockMode.Locked && !Input.GetMouseButton(0))
+                SetMenu(true);
             if (!_menuOpen && Input.GetKeyDown(KeyCode.F1)) _scenarios.Begin(_scenarios.Current);
         }
 
@@ -81,6 +91,7 @@ namespace CsAim.UI
             DrawStatus();
             DrawStats();
             if (_scenarios.Current == Scenario.SprayControl) DrawSprayPanel();
+            if (_scenarios.Current == Scenario.RecoilPath) DrawPathPanel();
             if (_menuOpen) DrawMenu();
             else
                 GUI.Label(new Rect(10, Screen.height - 28, 900, 24),
@@ -147,7 +158,7 @@ namespace CsAim.UI
             float speed = _player.Speed2D;
             bool accurate = _player.OnGround && speed <= max * CsConstants.AccurateSpeedFraction;
 
-            GUILayout.BeginArea(new Rect(10, 10, 430, 190), _box);
+            GUILayout.BeginArea(new Rect(10, 10, 430, 214), _box);
             GUILayout.Label($"<b>{w.Def.displayName}</b>   {(w.Reloading ? "<color=#fc6>reloading</color>" : $"{w.Ammo} / {w.Def.clipSize}")}", _big);
             GUILayout.Label($"<color=#999>data: {w.Def.source}</color>", _label);
             GUILayout.Label($"recoil: {(w.Recoil.IsMeasured ? "measured pattern" : $"seeded table (seed {w.Def.recoilSeed})")}", _label);
@@ -155,6 +166,7 @@ namespace CsAim.UI
             GUILayout.Label($"speed <color={sc}>{speed:0}</color> u/s   (accurate ≤ {max * CsConstants.AccurateSpeedFraction:0})", _label);
             GUILayout.Label($"inaccuracy {w.CurrentInaccuracy * 1000f:0.00}   spread {w.CurrentSpread * 1000f:0.00}   (x1000, items_game units)", _label);
             GUILayout.Label($"spray: shot {w.ShotsFired}   recoil index {w.RecoilIndex:0.0}", _label);
+            GUILayout.Label($"sens {_player.sensitivity:0.###} @ {_player.dpi:0} DPI   eDPI {_player.EDpi:0}   {_player.CmPer360:0.0} cm/360", _label);
             GUILayout.EndArea();
         }
 
@@ -177,6 +189,7 @@ namespace CsAim.UI
             switch (s)
             {
                 case Scenario.SprayControl: return "Spray control";
+                case Scenario.RecoilPath: return "Траектория";
                 case Scenario.Flick: return "Flick / one-tap";
                 case Scenario.Strafe: return "Strafing bots";
                 default: return "Peeks";
@@ -223,6 +236,43 @@ namespace CsAim.UI
             }
         }
 
+        void DrawPathPanel()
+        {
+            var p = _scenarios.Path;
+            const float pw = 330, ph = 300;
+            var rect = new Rect(Screen.width - pw - 10, 210, pw, ph);
+            GUILayout.BeginArea(rect, _box);
+            GUILayout.Label("<b>Веди прицел по зелёной линии</b>", _label);
+            GUILayout.Label($"<color=#999>Жёлтый квадрат = где должен быть прицел для следующей пули, его размер = допуск {p.ToleranceDeg:0.00}°</color>", _label);
+
+            // Progress through the current attempt.
+            GUILayout.Label($"цель: <b>{p.TargetLength}</b> пуль{(p.Progressive ? " (растёт на 5 после чистого прохода)" : "")}", _label);
+            var bar = GUILayoutUtility.GetRect(pw - 20, 14);
+            Line(bar, new Color(1, 1, 1, 0.12f));
+            float frac = p.TargetLength > 0 ? (float)(p.Active ? p.CurrentBullet : 0) / p.TargetLength : 0f;
+            Line(new Rect(bar.x, bar.y, bar.width * Mathf.Clamp01(frac), bar.height), new Color(0.2f, 0.9f, 0.35f));
+            float best = p.TargetLength > 0 ? Mathf.Clamp01((float)p.BestBullets / p.TargetLength) : 0f;
+            Line(new Rect(bar.x + bar.width * best - 1, bar.y - 2, 2, bar.height + 4), Color.white);
+
+            GUILayout.Space(4);
+            GUILayout.Label($"точность траектории  <b>{p.PathAccuracy:0}%</b>", _label);
+            GUILayout.Label($"средняя ошибка  {p.MeanErrorDeg:0.00}°   последняя {p.LastErrorDeg:0.00}°", _label);
+            GUILayout.Label($"пули в цель (с разбросом)  {p.OnTargetRate:0}%", _label);
+            GUILayout.Label($"попыток {p.Attempts}   чистых {p.CleanSprays}   рекорд {p.BestBullets} пуль", _label);
+
+            if (p.Message.Length > 0 && Time.time - p.MessageTime < 4f)
+            {
+                string col = p.MessageIsSuccess ? "#5f5" : "#f66";
+                GUILayout.Label($"<color={col}><b>{p.Message}</b></color>", _label);
+            }
+            GUILayout.EndArea();
+
+            // Red flash on failure so it registers even while you're looking at the wall.
+            float since = Time.time - p.MessageTime;
+            if (!p.MessageIsSuccess && since < 0.25f && p.Message.Length > 0)
+                Line(new Rect(0, 0, Screen.width, Screen.height), new Color(1f, 0f, 0f, 0.25f * (1f - since / 0.25f)));
+        }
+
         static void Dot(Vector2 origin, Vector2 pitchYaw, float ppd, Color c, float size, Rect clip)
         {
             var p = new Vector2(origin.x + pitchYaw.y * ppd, origin.y - pitchYaw.x * ppd);
@@ -234,7 +284,7 @@ namespace CsAim.UI
 
         void DrawMenu()
         {
-            var r = new Rect(Screen.width * 0.5f - 330, Screen.height * 0.5f - 280, 660, 560);
+            var r = new Rect(Screen.width * 0.5f - 340, Screen.height * 0.5f - 320, 680, 640);
             GUILayout.BeginArea(r, _box);
             GUILayout.Label("<b>CS Aim Trainer</b>", _big);
 
@@ -269,7 +319,22 @@ namespace CsAim.UI
             GUILayout.Label("zoom_sensitivity_ratio", _label, GUILayout.Width(170));
             _zoomText = GUILayout.TextField(_zoomText, GUILayout.Width(80));
             GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("DPI мыши", _label, GUILayout.Width(170));
+            _dpiText = GUILayout.TextField(_dpiText, GUILayout.Width(80));
+            GUILayout.EndHorizontal();
             if (GUILayout.Button("Apply")) ApplySettings();
+            GUILayout.Label($"<color=#aaa>eDPI {_player.EDpi:0}   •   {_player.CmPer360:0.0} см на 360°</color>", _label);
+
+            GUILayout.Label($"допуск траектории: {_scenarios.Path.ToleranceDeg:0.00}°", _label);
+            float tol = GUILayout.HorizontalSlider(_scenarios.Path.ToleranceDeg, 0.25f, 2f);
+            if (!Mathf.Approximately(tol, _scenarios.Path.ToleranceDeg))
+            {
+                _scenarios.Path.ToleranceDeg = tol;
+                PlayerPrefs.SetFloat(ToleranceKey, tol);
+            }
+            bool prog = GUILayout.Toggle(_scenarios.Path.Progressive, " траектория: начинать с 10 пуль и наращивать");
+            if (prog != _scenarios.Path.Progressive) _scenarios.Path.SetProgressive(prog);
 
             _player.Weapon.InfiniteAmmo = GUILayout.Toggle(_player.Weapon.InfiniteAmmo, " sv_infinite_ammo 2 (refill on reload)");
             _scenarios.Impacts.Enabled = GUILayout.Toggle(_scenarios.Impacts.Enabled, " sv_showimpacts 1");
@@ -283,17 +348,24 @@ namespace CsAim.UI
             GUILayout.EndHorizontal();
 
             GUILayout.Space(6);
-            GUILayout.Label("Import weapon data from your CS2 install (items_game.txt or weapon_*.vdata):", _label);
-            GUILayout.BeginHorizontal();
-            _importPath = GUILayout.TextField(_importPath);
-            if (GUILayout.Button("Import", GUILayout.Width(80))) Import();
-            GUILayout.EndHorizontal();
-            if (_importStatus.Length > 0) GUILayout.Label(_importStatus, _label);
+            if (IsWeb)
+            {
+                GUILayout.Label("<color=#aaa>Браузерная версия: встроенные значения оружия. Импорт items_game.txt доступен в десктопной сборке.</color>", _label);
+            }
+            else
+            {
+                GUILayout.Label("Import weapon data from your CS2 install (items_game.txt or weapon_*.vdata):", _label);
+                GUILayout.BeginHorizontal();
+                _importPath = GUILayout.TextField(_importPath);
+                if (GUILayout.Button("Import", GUILayout.Width(80))) Import();
+                GUILayout.EndHorizontal();
+                if (_importStatus.Length > 0) GUILayout.Label(_importStatus, _label);
+            }
 
             GUILayout.FlexibleSpace();
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Resume", GUILayout.Height(30))) SetMenu(false);
-            if (GUILayout.Button("Quit", GUILayout.Height(30))) Application.Quit();
+            if (!IsWeb && GUILayout.Button("Quit", GUILayout.Height(30))) Application.Quit();
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
         }
@@ -304,6 +376,11 @@ namespace CsAim.UI
             {
                 _player.sensitivity = s;
                 PlayerPrefs.SetFloat(SensKey, s);
+            }
+            if (float.TryParse(_dpiText.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) && d > 0f)
+            {
+                _player.dpi = d;
+                PlayerPrefs.SetFloat(DpiKey, d);
             }
             if (float.TryParse(_zoomText.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var z) && z > 0f)
             {
