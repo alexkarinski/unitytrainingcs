@@ -42,6 +42,20 @@
       };
     })();
   </script>
+  <script>
+    // Chrome sends one bogus mousemove right when pointer lock engages: the cursor's position
+    // reported as movement (e.g. dx=-640 dy=-698), which would spin the view by tens of degrees.
+    // Swallow movement for a moment after every lock, before Unity's listeners can see it.
+    (function () {
+      var ignoreUntil = 0;
+      document.addEventListener("pointerlockchange", function () {
+        if (document.pointerLockElement) ignoreUntil = performance.now() + 150;
+      }, true);
+      window.addEventListener("mousemove", function (e) {
+        if (document.pointerLockElement && performance.now() < ignoreUntil) e.stopImmediatePropagation();
+      }, true);
+    })();
+  </script>
   <script src="Build/{{{ LOADER_FILENAME }}}"></script>
   <script>
     createUnityInstance(document.querySelector("#unity-canvas"), {
@@ -68,7 +82,7 @@
       var unlocked = !document.pointerLockElement;
       document.body.classList.toggle("unlocked", unlocked);
       // Esc is consumed by the browser to release the mouse; tell the game to show its menu.
-      if (unlocked && unityInstance) unityInstance.SendMessage("HUD", "OnPointerUnlocked", "");
+      if (unityInstance) unityInstance.SendMessage("HUD", unlocked ? "OnPointerUnlocked" : "OnPointerLocked", "");
     }
     document.addEventListener("pointerlockchange", syncLock);
     syncLock();

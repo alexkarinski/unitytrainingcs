@@ -69,6 +69,8 @@ namespace CsAim.Player
         bool _jumpLatch;
         int _previousWeapon;
         bool _blockFire;
+        int _skipMouseFrames;
+        bool _suppressAttackThisTick;
 
         public void Init(Camera cam, List<WeaponDefinition> weapons)
         {
@@ -117,6 +119,9 @@ namespace CsAim.Player
 
         public void SetEyeAngles(Vector2 pitchYaw) => _eyeAngles = pitchYaw;
 
+        /// <summary>Ignore mouse movement for a few frames (cursor capture can report a bogus jump).</summary>
+        public void SkipMouse(int frames = 3) => _skipMouseFrames = Mathf.Max(_skipMouseFrames, frames);
+
         /// <summary>Ignore the trigger until the player lets go of it (restart after a failed attempt).</summary>
         public void BlockFireUntilRelease() => _blockFire = true;
 
@@ -129,18 +134,25 @@ namespace CsAim.Player
 
             if (InputEnabled)
             {
-                ReadMouse();
+                if (_skipMouseFrames > 0) _skipMouseFrames--;
+                else ReadMouse();
                 ReadButtons();
             }
 
-            // Fixed 64 Hz simulation, like the game server.
+            // Fixed 64 Hz simulation, like the game server. When one frame covers several ticks
+            // (low FPS), a trigger pressed during this frame only counts from the last tick on,
+            // so a quick tap is one shot instead of a burst back-dated to the previous frame.
             _tickAccumulator += Mathf.Min(Time.deltaTime, 0.25f);
-            while (_tickAccumulator >= CsConstants.TickInterval)
+            int ticks = Mathf.FloorToInt(_tickAccumulator / CsConstants.TickInterval);
+            bool pressedThisFrame = InputEnabled && Bindings.Pressed(InputAction.Attack);
+            for (int i = 0; i < ticks; i++)
             {
                 _tickAccumulator -= CsConstants.TickInterval;
                 _simTime += CsConstants.TickInterval;
+                _suppressAttackThisTick = pressedThisFrame && i < ticks - 1;
                 SimulateTick(CsConstants.TickInterval);
             }
+            _suppressAttackThisTick = false;
 
             UpdateCamera();
         }
@@ -247,8 +259,10 @@ namespace CsAim.Player
                 };
                 bool rawHeld = input && b.Held(InputAction.Attack);
                 if (!rawHeld) _blockFire = false;
-                bool held = rawHeld && !_blockFire;
-                Weapon.Tick(_simTime, dt, owner, held, _attackPressedLatch && !_blockFire);
+                bool held = rawHeld && !_blockFire && !_suppressAttackThisTick;
+                bool pressed = _attackPressedLatch && !_blockFire && !_suppressAttackThisTick;
+                Weapon.Tick(_simTime, dt, owner, held, pressed);
+                if (_suppressAttackThisTick) return;   // keep the press latched for the final tick
             }
             _attackPressedLatch = false;
         }

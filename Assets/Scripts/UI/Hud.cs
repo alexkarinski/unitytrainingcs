@@ -108,6 +108,9 @@ namespace CsAim.UI
             if (!_menuOpen) SetMenu(true);
         }
 
+        /// <summary>Called by the WebGL page when the browser grants pointer lock.</summary>
+        public void OnPointerLocked(string _) => _player.SkipMouse();
+
         public void LoadConfigText(string text)
         {
             var cfg = new Cs2Config();
@@ -129,6 +132,7 @@ namespace CsAim.UI
         {
             _menuOpen = open;
             _player.InputEnabled = !open;
+            if (!open) _player.SkipMouse();
             Cursor.lockState = open ? CursorLockMode.None : CursorLockMode.Locked;
             Cursor.visible = open;
         }
