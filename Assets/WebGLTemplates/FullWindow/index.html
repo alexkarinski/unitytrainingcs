@@ -26,12 +26,25 @@
     <div style="font-size:13px;color:#888">Нажми «Resume», чтобы захватить мышь. Esc открывает меню.</div>
   </div>
   <script>
-    // Raw mouse: ask the browser for pointer-lock deltas WITHOUT OS acceleration, so mouse
-    // counts map 1:1 like CS2's raw input. Falls back if the browser doesn't support it.
+    // Mouse capture, done the way an aim trainer needs it:
+    //  1. Raw input: request pointer lock with unadjustedMovement, so deltas are mouse counts without
+    //     OS acceleration, like CS2's raw input (falls back if the browser doesn't support it).
+    //  2. No re-locking: Unity asks for the lock again on every click even while it's held. Chrome
+    //     then re-locks and each time sends a bogus move (the cursor position reported as movement,
+    //     e.g. dx=-640 dy=-698) that spins the view. While locked, those requests are ignored.
+    //  3. Settle window: on a real lock, moves for a short moment are swallowed before Unity's
+    //     listeners see them. The bogus move can arrive before pointerlockchange fires, so the
+    //     window starts at the request and again at the unlocked->locked transition. Outside the
+    //     window, a move whose delta is exactly minus the cursor position is dropped as well.
     (function () {
+      var settleUntil = 0, wasLocked = false;
+      function arm(ms) { settleUntil = Math.max(settleUntil, performance.now() + ms); }
+
       var original = HTMLCanvasElement.prototype.requestPointerLock;
       HTMLCanvasElement.prototype.requestPointerLock = function (options) {
+        if (document.pointerLockElement === this) return Promise.resolve();
         var self = this;
+        arm(400);
         try {
           var r = original.call(self, Object.assign({ unadjustedMovement: true }, options || {}));
           if (r && typeof r.catch === "function") return r.catch(function () { return original.call(self, options); });
@@ -40,19 +53,22 @@
           return original.call(self, options);
         }
       };
-    })();
-  </script>
-  <script>
-    // Chrome sends one bogus mousemove right when pointer lock engages: the cursor's position
-    // reported as movement (e.g. dx=-640 dy=-698), which would spin the view by tens of degrees.
-    // Swallow movement for a moment after every lock, before Unity's listeners can see it.
-    (function () {
-      var ignoreUntil = 0;
+
+      function filter(e) {
+        var locked = !!document.pointerLockElement;
+        if (locked && !wasLocked) arm(150);
+        wasLocked = locked;
+        if (!locked) return;
+        // Signature of the bogus move: movement equal to minus the (frozen) cursor position.
+        var bogus = (e.movementX !== 0 || e.movementY !== 0) && e.movementX === -e.clientX && e.movementY === -e.clientY;
+        if (bogus || performance.now() < settleUntil) e.stopImmediatePropagation();
+      }
+      window.addEventListener("mousemove", filter, true);
+      window.addEventListener("pointermove", filter, true);
       document.addEventListener("pointerlockchange", function () {
-        if (document.pointerLockElement) ignoreUntil = performance.now() + 150;
-      }, true);
-      window.addEventListener("mousemove", function (e) {
-        if (document.pointerLockElement && performance.now() < ignoreUntil) e.stopImmediatePropagation();
+        var locked = !!document.pointerLockElement;
+        if (locked && !wasLocked) arm(150);
+        wasLocked = locked;
       }, true);
     })();
   </script>
