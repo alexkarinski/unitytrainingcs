@@ -7,7 +7,8 @@ namespace CsAim.Data
     /// <summary>
     /// Supplies the weapon list. Priority:
     ///   1. WeaponDefinition assets the user imported in the editor (Resources/Weapons)
-    ///   2. items_game.txt found at StreamingAssets or at the path saved in PlayerPrefs
+    ///   2. The path saved in PlayerPrefs, StreamingAssets/items_game.txt, or the default CS2
+    ///      pak01_dir.vpk (CS2 keeps items_game.txt inside the VPK)
     ///   3. Bundled fallbacks below
     ///
     /// The fallbacks are approximations written from public CS:GO-era data so the trainer runs
@@ -25,7 +26,7 @@ namespace CsAim.Data
 
             foreach (var path in CandidatePaths())
             {
-                if (!File.Exists(path)) continue;
+                if (!File.Exists(path) && !Directory.Exists(path)) continue;
                 try
                 {
                     var imported = ItemsGameImporter.ImportFile(path);

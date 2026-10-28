@@ -4,8 +4,8 @@
 и чувствительность мыши. Цель: водить мышкой и попадать так же, как в игре, чтобы навык
 переносился в CS2 один в один.
 
-Значения оружия берутся **из файлов твоей установки CS2** (`items_game.txt` / `weapon_*.vdata`):
-никаких «похожих на глаз» чисел. Формулы повторяют движок Source / CS:GO / CS2.
+Значения оружия берутся **из файлов твоей установки CS2**: архив `pak01_dir.vpk` читается
+напрямую, распаковывать ничего не нужно. Никаких «похожих на глаз» чисел. Формулы повторяют движок Source / CS:GO / CS2.
 
 ## Быстрый старт
 
@@ -15,14 +15,24 @@
    HUD показывает eDPI и **см на 360°**, чтобы сверить ощущения с CS2. Сам DPI в расчёт поворота
    не входит: и игра, и тренажёр считают «отсчёты мыши × сенса × 0.022».
 4. Чтобы цифры совпадали с игрой точно: **Esc → Import** и путь к
-   `...\Counter-Strike Global Offensive\game\csgo\scripts\items\items_game.txt`
-   (или в редакторе: *Tools → CS Aim → Import items_game.txt*). Путь запоминается.
+   `...\Counter-Strike Global Offensive\game\csgo\pak01_dir.vpk` (или к самой папке `game\csgo`).
+   В редакторе то же самое: *Tools → CS Aim → Import weapons*. Путь запоминается.
+   В CS2, в отличие от CS:GO, папки `scripts` на диске нет: `items_game.txt` и файлы оружия лежат
+   внутри VPK, и тренажёр достаёт их оттуда сам. Если в твоей версии игры статы оружия есть только
+   в скомпилированных `*.vdata_c`, импорт об этом скажет. Тогда декомпилируй их в
+   [Source 2 Viewer](https://valveresourceformat.github.io/) и укажи полученный `.vdata` или папку с ними.
+5. **Конфиг CS2:** Esc → «Конфиг CS2», укажи папку `game\csgo\cfg` или
+   `Steam\userdata\<id>\730\local\cfg`. Подтянутся `sensitivity`, `zoom_sensitivity_ratio`, прицел
+   (`cl_crosshair*`) и бинды. Файлы применяются в том же порядке, что и в игре: стандартные → твои → `autoexec.cfg`.
+   Серверные `gamemode_*.cfg` пропускаются. Сенса обычно лежит в `cs2_user_convars_0_slot0.vcfg` (userdata).
 
-| Клавиша | Действие |
+Управление — бинды CS2: стандартные или загруженные из твоего конфига.
+
+| Клавиша (по умолчанию) | Действие |
 |---|---|
 | ЛКМ / ПКМ | огонь / прицел или глушитель |
-| WASD, Shift, Ctrl, Space | движение, шаг, присед, прыжок |
-| 1–9, Q | выбор оружия, предыдущее |
+| WASD, Shift, Ctrl, Space | движение, шаг (`+sprint`), присед, прыжок |
+| 1–9, Q, колесо | выбор оружия, предыдущее, листать |
 | R | перезарядка |
 | F1 | перезапустить сценарий |
 | Esc | меню и настройки |
@@ -108,12 +118,13 @@ Workflow `.github/workflows/pages.yml` на каждый пуш собирает
 Pages не отдаёт нужный `Content-Encoding`. Шаблон `Assets/WebGLTemplates/FullWindow` запрашивает
 pointer lock с `unadjustedMovement`, то есть сырой ввод мыши без ускорения ОС (Chrome/Edge;
 остальные браузеры молча откатываются на обычный режим). В браузере работают встроенные значения
-оружия, импорт `items_game.txt` доступен только в десктопной сборке. Для максимальной точности
+оружия (импорт из VPK доступен только в десктопной сборке); конфиг CS2 загружается кнопкой на странице. Для максимальной точности
 ввода лучше десктопная сборка.
 
 ## Тесты
 
-Логика (ГПСЧ, парсер, движение, точность, оружие) запускается под обычным .NET, без Unity:
+Логика (ГПСЧ, VPK, парсеры items_game/vdata/cfg, движение, точность, оружие, траектория)
+запускается под обычным .NET, без Unity:
 
 ```
 dotnet run --project Tests
@@ -123,13 +134,13 @@ dotnet run --project Tests
 
 ```
 Assets/Scripts/
-  Core/       ValveUniformRandomStream, KeyValues (VDF+KV3), CsConstants, Materials
+  Core/       ValveUniformRandomStream, KeyValues (VDF+KV3), VpkArchive, Cs2Config, CsConstants, Materials
   Data/       WeaponDefinition, ItemsGameImporter, WeaponLibrary (встроенные значения)
   Weapons/    AccuracyModel, RecoilTable, WeaponController
-  Player/     SourceMovement, PlayerController
+  Player/     SourceMovement, PlayerController, InputBindings
   Combat/     Hitbox, DamageModel
   Training/   ScenarioManager, Target, SprayAnalyzer, PathTrainer, ImpactMarkers
-  UI/         Hud
+  UI/         Hud, Crosshair
   Bootstrap/  SceneBootstrap
 Assets/Editor/  ItemsGameImportMenu, WebGLBuild
 Assets/WebGLTemplates/FullWindow/  страница для браузера

@@ -62,6 +62,7 @@ namespace UnityEngine
         CapsLock = 301, Return = 13, Backspace = 8, Delete = 127, Insert = 277, Home = 278, End = 279,
         PageUp = 280, PageDown = 281, UpArrow = 273, DownArrow = 274, LeftArrow = 276, RightArrow = 275, Keypad0 = 256,
     }
+    public static class Debug { public static void LogWarning(object o) => System.Console.WriteLine("   [warn] " + o); }
     public static class Input
     {
         public static bool GetKey(KeyCode k) => false;

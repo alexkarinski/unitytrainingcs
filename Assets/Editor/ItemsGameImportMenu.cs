@@ -6,7 +6,7 @@ using UnityEngine;
 namespace CsAim.EditorTools
 {
     /// <summary>
-    /// Tools > CS Aim > Import items_game.txt: parses the file from your CS2 install and saves
+    /// Tools > CS Aim > Import weapons: reads pak01_dir.vpk / items_game.txt / .vdata and saves
     /// one WeaponDefinition asset per weapon into Assets/Resources/Weapons, where WeaponLibrary
     /// picks them up first. Existing assets are updated in place so a measured pattern you
     /// pasted into one survives a re-import.
@@ -15,19 +15,19 @@ namespace CsAim.EditorTools
     {
         const string OutputFolder = "Assets/Resources/Weapons";
 
-        [MenuItem("Tools/CS Aim/Import items_game.txt or .vdata...")]
+        [MenuItem("Tools/CS Aim/Import weapons (pak01_dir.vpk, items_game.txt, .vdata)...")]
         static void Import()
         {
             string start = File.Exists(ItemsGameImporter.DefaultItemsGamePath)
                 ? Path.GetDirectoryName(ItemsGameImporter.DefaultItemsGamePath)
                 : string.Empty;
-            string path = EditorUtility.OpenFilePanel("CS2 items_game.txt or weapon .vdata", start, "txt,vdata");
+            string path = EditorUtility.OpenFilePanel("CS2 pak01_dir.vpk, items_game.txt or .vdata", start, "vpk,txt,vdata");
             if (string.IsNullOrEmpty(path)) return;
 
-            var weapons = ItemsGameImporter.ImportFile(path);
+            var weapons = ItemsGameImporter.ImportFile(path, out var report);
             if (weapons.Count == 0)
             {
-                EditorUtility.DisplayDialog("CS Aim", "No weapons found in that file.", "OK");
+                EditorUtility.DisplayDialog("CS Aim", report, "OK");
                 return;
             }
 

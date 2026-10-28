@@ -17,6 +17,85 @@ static class Tests
         return w;
     }
 
+    // Writes a minimal VPK v2: entries = (path, bytes, inDirFile, preloadCount)
+    static void WriteVpk(string dirPath, (string path, byte[] data, bool inDir, int preload)[] files)
+    {
+        var archive = new System.IO.MemoryStream();   // pak01_000.vpk
+        var dirData = new System.IO.MemoryStream();   // data section after the tree
+        var tree = new System.IO.MemoryStream();
+        var tw = new System.IO.BinaryWriter(tree);
+        void Str(string v) { tw.Write(System.Text.Encoding.UTF8.GetBytes(v)); tw.Write((byte)0); }
+        foreach (var g in System.Linq.Enumerable.GroupBy(files, f => System.IO.Path.GetExtension(f.path).TrimStart('.')))
+        {
+            Str(g.Key.Length == 0 ? " " : g.Key);
+            foreach (var d in System.Linq.Enumerable.GroupBy(g, f => System.IO.Path.GetDirectoryName(f.path).Replace('\\', '/')))
+            {
+                Str(d.Key.Length == 0 ? " " : d.Key);
+                foreach (var f in d)
+                {
+                    Str(System.IO.Path.GetFileNameWithoutExtension(f.path));
+                    var rest = f.data.AsSpan(f.preload).ToArray();
+                    var target = f.inDir ? dirData : archive;
+                    tw.Write(0u); tw.Write((ushort)f.preload); tw.Write((ushort)(f.inDir ? 0x7FFF : 0));
+                    tw.Write((uint)target.Length); tw.Write((uint)rest.Length); tw.Write((ushort)0xFFFF);
+                    tw.Write(f.data, 0, f.preload);
+                    target.Write(rest, 0, rest.Length);
+                }
+                Str("");
+            }
+            Str("");
+        }
+        Str("");
+        using (var fs = System.IO.File.Create(dirPath))
+        using (var bw = new System.IO.BinaryWriter(fs))
+        {
+            bw.Write(0x55AA1234u); bw.Write(2u); bw.Write((uint)tree.Length);
+            bw.Write((uint)dirData.Length); bw.Write(0u); bw.Write(48u); bw.Write(0u);
+            bw.Write(tree.ToArray()); bw.Write(dirData.ToArray());
+        }
+        System.IO.File.WriteAllBytes(dirPath.Replace("_dir.vpk", "_000.vpk"), archive.ToArray());
+    }
+
+    static void VpkTests()
+    {
+        string tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "csaim_vpk_" + Environment.ProcessId);
+        System.IO.Directory.CreateDirectory(tmp);
+        string dirVpk = System.IO.Path.Combine(tmp, "pak01_dir.vpk");
+        string itemsGame = "\"items_game\" { \"prefabs\" { " +
+            "\"rifle\" { \"attributes\" { \"max player speed\" \"230\" \"is full auto\" \"1\" } } " +
+            "\"weapon_ak47_prefab\" { \"prefab\" \"rifle\" \"attributes\" { \"cycletime\" \"0.100000\" \"damage\" \"36\" \"max player speed\" \"215\" \"recoil seed\" \"223\" \"inaccuracy stand\" \"6.41\" } } } " +
+            "\"items\" { \"7\" { \"name\" \"weapon_ak47\" \"prefab\" \"weapon_ak47_prefab\" \"item_name\" \"#SFUI_WPNHUD_AK47\" } \"1\" { \"name\" \"weapon_knife\" } } }";
+        var big = new byte[5000]; for (int i = 0; i < big.Length; i++) big[i] = (byte)(i * 7);
+        WriteVpk(dirVpk, new[] {
+            ("scripts/items/items_game.txt", System.Text.Encoding.UTF8.GetBytes(itemsGame), false, 16),
+            ("materials/x.bin", big, true, 0),
+            ("readme", System.Text.Encoding.UTF8.GetBytes("root file"), true, 0),
+        });
+
+        var vpk = VpkArchive.Open(dirVpk);
+        Check(vpk.Count == 3 && vpk.Contains("scripts/items/items_game.txt") && vpk.Contains("readme"), $"VPK tree parsed ({vpk.Count} files, incl. no-ext root file)");
+        Check(vpk.ReadText("scripts/items/items_game.txt") == itemsGame, "file from pak01_000.vpk with preload bytes is exact");
+        var got = vpk.ReadBytes("materials/x.bin");
+        bool same = got.Length == big.Length; for (int i = 0; same && i < big.Length; i++) same = got[i] == big[i];
+        Check(same, "file stored inside _dir.vpk (0x7FFF) is exact");
+
+        var weapons = CsAim.Data.ItemsGameImporter.ImportFile(tmp, out var report);   // folder -> finds pak01_dir.vpk
+        Console.WriteLine("   " + report);
+        Check(weapons.Count == 1 && weapons[0].weaponId == "weapon_ak47", "VPK import finds AK, skips knife");
+        var ak = weapons[0];
+        Check(ak.primary.maxPlayerSpeed == 215f && ak.isFullAuto && ak.recoilSeed == 223 && Math.Abs(ak.primary.inaccuracyStand - 6.41f) < 1e-4,
+              "prefab chain resolved: own values override parent, parent fills the rest");
+        Check(ak.displayName == "AK47" && ak.source.Contains("pak01_dir.vpk"), $"display name / source ({ak.displayName}, {ak.source})");
+
+        string multi = "<!-- kv3 encoding:text:version{e21c7f3c} -->\n{\n weapon_ak47 = { m_flCycleTime = [0.1, 0.1] m_nDamage = 36 m_nRecoilSeed = 223 m_flSpread = [0.6, 0.6] }\n" +
+                       " weapon_awp = { m_flCycleTime = [1.455, 1.455] m_nDamage = 115 m_flMaxSpeed = [200.0, 100.0] }\n}";
+        var mv = CsAim.Data.ItemsGameImporter.ImportVDataText(multi, "weapons");
+        Check(mv.Count == 2 && mv[1].weaponId == "weapon_awp" && mv[1].primary.maxPlayerSpeed == 200f && mv[1].secondary.maxPlayerSpeed == 100f,
+              "multi-weapon .vdata split, [primary, alt] arrays mapped");
+        Check(CsAim.Data.ItemsGameImporter.ImportVDataText("VBKV\0\0binary", "weapons").Count == 0, "compiled/binary vdata is skipped, not misparsed");
+        System.IO.Directory.Delete(tmp, true);
+    }
+
     static void ConfigTests()
     {
         var c = new Cs2Config();
@@ -211,6 +290,7 @@ static class Tests
         WeaponTests();
         PathTests();
         ConfigTests();
+        VpkTests();
         Console.WriteLine(fails == 0 ? "ALL PASSED" : $"{fails} FAILED");
         return fails;
     }

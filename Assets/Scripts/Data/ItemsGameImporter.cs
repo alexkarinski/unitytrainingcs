@@ -11,29 +11,108 @@ namespace CsAim.Data
     /// numbers the game uses instead of anything hard-coded here.
     ///
     /// Supported inputs:
-    ///   game/csgo/scripts/items/items_game.txt   (VDF, prefab inheritance)
-    ///   weapon_*.vdata extracted from pak01      (KV3, values often stored as [primary, alt])
+    ///   game/csgo/pak01_dir.vpk (or the game/csgo folder) - CS2 keeps its scripts inside the VPK,
+    ///                            items_game.txt and any text .vdata are read straight from it
+    ///   items_game.txt           (VDF, prefab inheritance; CS:GO had it loose on disk)
+    ///   *.vdata or a folder of them, e.g. decompiled with Source 2 Viewer (KV3, [primary, alt])
     ///
     /// The file is read locally and never redistributed (it's Valve's content), which is why the
     /// repository .gitignore excludes it.
     /// </summary>
     public static class ItemsGameImporter
     {
-        /// <summary>Default install path on Windows, used as a hint by the UI.</summary>
+        /// <summary>Default CS2 install location on Windows, used as a hint by the UI.</summary>
         public const string DefaultItemsGamePath =
-            @"C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game\csgo\scripts\items\items_game.txt";
+            @"C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game\csgo\pak01_dir.vpk";
 
-        public static List<WeaponDefinition> ImportFile(string path)
+        const string ItemsGameInVpk = "scripts/items/items_game.txt";
+
+        public static List<WeaponDefinition> ImportFile(string path) => ImportFile(path, out _);
+
+        /// <param name="report">Human-readable summary of what was found, for the UI.</param>
+        public static List<WeaponDefinition> ImportFile(string path, out string report)
         {
+            path = path.Trim().Trim('"');
+
+            if (Directory.Exists(path))
+            {
+                // game/csgo, the game root, or a folder of extracted .vdata files.
+                foreach (var candidate in new[] { "pak01_dir.vpk", Path.Combine("game", "csgo", "pak01_dir.vpk"), Path.Combine("csgo", "pak01_dir.vpk") })
+                {
+                    string vpk = Path.Combine(path, candidate);
+                    if (File.Exists(vpk)) return ImportFile(vpk, out report);
+                }
+
+                var fromFolder = new List<WeaponDefinition>();
+                foreach (var f in Directory.GetFiles(path, "*.vdata", SearchOption.AllDirectories))
+                    fromFolder.AddRange(Tag(ImportVDataText(File.ReadAllText(f), Path.GetFileNameWithoutExtension(f)), f));
+                string items = Path.Combine(path, "items_game.txt");
+                if (fromFolder.Count == 0 && File.Exists(items)) return ImportFile(items, out report);
+
+                report = fromFolder.Count > 0
+                    ? $"{fromFolder.Count} weapons from .vdata files in the folder"
+                    : "No pak01_dir.vpk, items_game.txt or .vdata files in that folder.";
+                return fromFolder;
+            }
+
+            if (path.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase)) return ImportVpk(path, out report);
+
             string text = File.ReadAllText(path);
-            var root = KeyValues.Parse(text);
-
             var result = path.EndsWith(".vdata", StringComparison.OrdinalIgnoreCase)
-                ? ImportVData(root, Path.GetFileNameWithoutExtension(path))
-                : ImportItemsGame(root);
+                ? ImportVDataText(text, Path.GetFileNameWithoutExtension(path))
+                : ImportItemsGame(KeyValues.Parse(text));
+            report = $"{result.Count} weapons from {Path.GetFileName(path)}";
+            return Tag(result, path);
+        }
 
-            foreach (var w in result) w.source = $"{Path.GetFileName(path)} ({path})";
-            return result;
+        static List<WeaponDefinition> ImportVpk(string vpkPath, out string report)
+        {
+            if (!vpkPath.EndsWith("_dir.vpk", StringComparison.OrdinalIgnoreCase))
+            {
+                report = "Pick the *_dir.vpk file (e.g. pak01_dir.vpk), not a numbered pak01_NNN.vpk.";
+                return new List<WeaponDefinition>();
+            }
+
+            var vpk = VpkArchive.Open(vpkPath);
+            var byId = new Dictionary<string, WeaponDefinition>();
+            string where = Path.GetFileName(vpkPath);
+
+            // 1. items_game.txt prefabs (still the source of truth wherever it carries stats).
+            if (vpk.Contains(ItemsGameInVpk))
+                foreach (var w in ImportItemsGame(KeyValues.Parse(vpk.ReadText(ItemsGameInVpk))))
+                    byId[w.weaponId] = Tag(w, $"{where}/{ItemsGameInVpk}");
+
+            // 2. Text weapon .vdata, if this build ships any, override per weapon.
+            int compiled = 0;
+            foreach (var file in vpk.Files)
+            {
+                if (!file.StartsWith("scripts/", StringComparison.OrdinalIgnoreCase)) continue;
+                if (file.EndsWith(".vdata_c", StringComparison.OrdinalIgnoreCase)) { if (file.IndexOf("weapon", StringComparison.OrdinalIgnoreCase) >= 0) compiled++; continue; }
+                if (!file.EndsWith(".vdata", StringComparison.OrdinalIgnoreCase) || file.IndexOf("weapon", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                foreach (var w in ImportVDataText(vpk.ReadText(file), Path.GetFileNameWithoutExtension(file)))
+                    byId[w.weaponId] = Tag(w, $"{where}/{file}");
+            }
+
+            var list = new List<WeaponDefinition>(byId.Values);
+            report = list.Count > 0
+                ? $"{list.Count} weapons read from {where} ({vpk.Count} files in archive)"
+                : $"{where}: no weapon stats in items_game.txt and no text .vdata. " +
+                  (compiled > 0
+                      ? $"This CS2 build keeps them in {compiled} compiled .vdata_c file(s): decompile scripts/weapons*.vdata_c with Source 2 Viewer and import the resulting .vdata (or its folder)."
+                      : "Weapon data was not found in this archive.");
+            return list;
+        }
+
+        static List<WeaponDefinition> Tag(List<WeaponDefinition> list, string source)
+        {
+            foreach (var w in list) Tag(w, source);
+            return list;
+        }
+
+        static WeaponDefinition Tag(WeaponDefinition w, string source)
+        {
+            w.source = source;
+            return w;
         }
 
         // ------------------------------------------------------------------ items_game.txt
@@ -108,17 +187,45 @@ namespace CsAim.Data
 
         // ------------------------------------------------------------------ CS2 .vdata
 
-        static List<WeaponDefinition> ImportVData(KeyValues root, string fileName)
+        /// <summary>
+        /// A .vdata holds either one weapon (weapon_ak47.vdata) or many keyed by class name
+        /// (weapons.vdata: weapon_ak47 = { ... }, weapon_m4a1 = { ... }).
+        /// </summary>
+        public static List<WeaponDefinition> ImportVDataText(string text, string fileName)
+        {
+            var result = new List<WeaponDefinition>();
+            if (string.IsNullOrEmpty(text) || text.IndexOf('\0') >= 0) return result;   // compiled/binary resource
+
+            var root = KeyValues.Parse(text);
+            var body = root.Children.Count == 1 && root.Children[0].Key.Length == 0 ? root.Children[0] : root;
+
+            foreach (var child in body.Children)
+            {
+                if (!child.HasChildren || !child.Key.StartsWith("weapon_", StringComparison.Ordinal)) continue;
+                var w = FromVData(child, child.Key);
+                if (w != null) result.Add(w);
+            }
+
+            if (result.Count == 0)
+            {
+                var single = FromVData(root, fileName.StartsWith("weapon_") ? fileName : "weapon_" + fileName);
+                if (single != null) result.Add(single);
+            }
+            return result;
+        }
+
+        static WeaponDefinition FromVData(KeyValues node, string id)
         {
             var attrs = new Dictionary<string, string>();
-            Flatten(root, attrs);
+            Flatten(node, attrs);
+            if (!attrs.ContainsKey("cycle_time") && !attrs.ContainsKey("cycletime") && !attrs.ContainsKey("damage")) return null;
 
             var w = ScriptableObject.CreateInstance<WeaponDefinition>();
-            w.weaponId = fileName.StartsWith("weapon_") ? fileName : "weapon_" + fileName;
-            w.name = w.weaponId;
-            w.displayName = Prettify(w.weaponId);
+            w.weaponId = id;
+            w.name = id;
+            w.displayName = Prettify(id);
             Apply(w, new AttributeSource(attrs));
-            return new List<WeaponDefinition> { w };
+            return w;
         }
 
         static void Flatten(KeyValues node, Dictionary<string, string> attrs)

@@ -431,7 +431,7 @@ namespace CsAim.UI
             }
             else
             {
-                GUILayout.Label("Import weapon data from your CS2 install (items_game.txt or weapon_*.vdata):", _label);
+                GUILayout.Label("Данные оружия из CS2: pak01_dir.vpk (или папка game\\csgo), items_game.txt или .vdata:", _label);
                 GUILayout.BeginHorizontal();
                 _importPath = GUILayout.TextField(_importPath);
                 if (GUILayout.Button("Import", GUILayout.Width(80))) Import();
@@ -470,18 +470,18 @@ namespace CsAim.UI
         void Import()
         {
             string path = _importPath.Trim().Trim('"');
-            if (!File.Exists(path)) { _importStatus = "<color=#f66>File not found.</color>"; return; }
+            if (!File.Exists(path) && !Directory.Exists(path)) { _importStatus = "<color=#f66>File or folder not found.</color>"; return; }
 
             try
             {
-                List<WeaponDefinition> weapons = ItemsGameImporter.ImportFile(path);
-                if (weapons.Count == 0) { _importStatus = "<color=#f66>No weapons found in that file.</color>"; return; }
+                List<WeaponDefinition> weapons = ItemsGameImporter.ImportFile(path, out var report);
+                if (weapons.Count == 0) { _importStatus = $"<color=#f66>{report}</color>"; return; }
 
                 PlayerPrefs.SetString(WeaponLibrary.PathPrefKey, path);
                 PlayerPrefs.Save();
                 _player.Init(_player.Camera, weapons);
                 _scenarios.RebuildPatternPreview();
-                _importStatus = $"<color=#6f6>Imported {weapons.Count} weapons. Saved as default source.</color>";
+                _importStatus = $"<color=#6f6>{report}. Saved as default source.</color>";
             }
             catch (System.Exception e)
             {

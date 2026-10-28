@@ -13,6 +13,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)../Assets/Scripts/Data/WeaponDefinition.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../Assets/Scripts/Training/PathTrainer.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../Assets/Scripts/Player/InputBindings.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../Assets/Scripts/Data/ItemsGameImporter.cs" />
     <Compile Include="Tests.cs" />
     <Compile Include="Shim.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../Assets/Scripts/Weapons/RecoilTable.cs" />
