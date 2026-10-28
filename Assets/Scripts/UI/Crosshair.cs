@@ -10,10 +10,11 @@ namespace CsAim.UI
     /// </summary>
     public sealed class Crosshair
     {
+        // Defaults: a common static CS2 crosshair until a config is loaded.
         public int style = 4;              // 0/2/3 dynamic, 1/4/5 static
-        public float size = 2f;
+        public float size = 3f;
         public float gap = -1f;
-        public float thickness = 0.5f;
+        public float thickness = 1f;
         public bool dot;
         public bool tShape;
         public bool outline = true;

@@ -242,7 +242,7 @@ namespace CsAim.UI
             GUILayout.Label($"recoil: {(w.Recoil.IsMeasured ? "measured pattern" : $"seeded table (seed {w.Def.recoilSeed})")}", _label);
             string sc = accurate ? "#5f5" : "#f55";
             GUILayout.Label($"speed <color={sc}>{speed:0}</color> u/s   (accurate ≤ {max * CsConstants.AccurateSpeedFraction:0})", _label);
-            GUILayout.Label($"inaccuracy {w.CurrentInaccuracy * 1000f:0.00}   spread {w.CurrentSpread * 1000f:0.00}   (x1000, items_game units)", _label);
+            GUILayout.Label($"inaccuracy {w.CurrentInaccuracy * 1000f:0.00}   spread {w.CurrentSpread * 1000f:0.00}   (x1000)", _label);
             GUILayout.Label($"spray: shot {w.ShotsFired}   recoil index {w.RecoilIndex:0.0}", _label);
             GUILayout.Label($"sens {_player.sensitivity:0.###} @ {_player.dpi:0} DPI   eDPI {_player.EDpi:0}   {_player.CmPer360:0.0} cm/360", _label);
             GUILayout.EndArea();
@@ -429,7 +429,7 @@ namespace CsAim.UI
             GUILayout.Label("Конфиг CS2 (sensitivity, прицел, бинды): папка game\\csgo\\cfg, userdata\\…\\730\\local\\cfg или файл .cfg/.vcfg", _label);
             if (IsWeb)
             {
-                GUILayout.Label("<color=#aaa>В браузере: кнопка «Загрузить конфиг CS2» в правом верхнем углу страницы (можно выбрать несколько файлов).</color>", _label);
+                GUILayout.Label("<color=#aaa>В браузере: кнопка «Загрузить конфиг CS2» в правом нижнем углу страницы (можно выбрать несколько файлов).</color>", _label);
             }
             else
             {
