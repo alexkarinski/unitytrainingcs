@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS8632</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)../Assets/Scripts/Core/*.cs" Exclude="$(MSBuildThisFileDirectory)../Assets/Scripts/Core/Materials.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../Assets/Scripts/Player/SourceMovement.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../Assets/Scripts/Weapons/AccuracyModel.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../Assets/Scripts/Data/WeaponDefinition.cs" />
+    <Compile Include="Tests.cs" />
+    <Compile Include="Shim.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../Assets/Scripts/Weapons/RecoilTable.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../Assets/Scripts/Weapons/WeaponController.cs" />
+  </ItemGroup>
+</Project>
