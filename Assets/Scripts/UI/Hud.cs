@@ -16,9 +16,9 @@ namespace CsAim.UI
         ScenarioManager _scenarios;
 
         bool _menuOpen;
-        bool _recoilCrosshair;
-        bool _dynamicCrosshair = true;
+        readonly Crosshair _crosshair = new Crosshair { showCone = true };
         string _sensText, _zoomText, _dpiText, _importPath, _importStatus = string.Empty;
+        string _cfgPath, _cfgStatus = string.Empty;
         GUIStyle _label, _big, _box;
         Vector2 _weaponScroll;
 
@@ -26,6 +26,8 @@ namespace CsAim.UI
         const string ZoomKey = "csaim.zoom_ratio";
         const string DpiKey = "csaim.dpi";
         const string ToleranceKey = "csaim.path_tolerance";
+        const string CfgTextKey = "csaim.cs2cfg";
+        const string CfgPathKey = "csaim.cs2cfg_path";
 
         static bool IsWeb => Application.platform == RuntimePlatform.WebGLPlayer;
 
@@ -41,7 +43,78 @@ namespace CsAim.UI
             _sensText = player.sensitivity.ToString(CultureInfo.InvariantCulture);
             _zoomText = player.zoomSensitivityRatio.ToString(CultureInfo.InvariantCulture);
             _importPath = PlayerPrefs.GetString(WeaponLibrary.PathPrefKey, ItemsGameImporter.DefaultItemsGamePath);
+            _cfgPath = PlayerPrefs.GetString(CfgPathKey, DefaultCfgFolder);
+
+            // Re-apply the CS2 config loaded last time (sens, crosshair, binds).
+            string saved = PlayerPrefs.GetString(CfgTextKey, string.Empty);
+            if (saved.Length > 0)
+            {
+                var cfg = new Cs2Config();
+                cfg.AddText(saved, "saved");
+                ApplyConfig(cfg, persist: false);
+                _cfgStatus = "<color=#999>применён сохранённый конфиг CS2</color>";
+            }
             SetMenu(false);
+        }
+
+        const string DefaultCfgFolder =
+            @"C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game\csgo\cfg";
+
+        /// <summary>Applies sensitivity, zoom ratio, crosshair and binds from a CS2 config.</summary>
+        void ApplyConfig(Cs2Config cfg, bool persist)
+        {
+            if (cfg.TryGetFloat("sensitivity", out var sens) && sens > 0f)
+            {
+                _player.sensitivity = sens;
+                PlayerPrefs.SetFloat(SensKey, sens);
+            }
+            if ((cfg.TryGetFloat("zoom_sensitivity_ratio", out var zr) || cfg.TryGetFloat("zoom_sensitivity_ratio_mouse", out zr)) && zr > 0f)
+            {
+                _player.zoomSensitivityRatio = zr;
+                PlayerPrefs.SetFloat(ZoomKey, zr);
+            }
+            _crosshair.Apply(cfg);
+
+            var b = _player.Bindings;
+            int applied = 0;
+            foreach (var kv in cfg.Binds)
+            {
+                if (kv.Key == "*") b.ClearAll();
+                else if (kv.Value.Length == 0) b.Unbind(kv.Key);
+                else if (b.Bind(kv.Key, kv.Value)) applied++;
+            }
+
+            _sensText = _player.sensitivity.ToString(CultureInfo.InvariantCulture);
+            _zoomText = _player.zoomSensitivityRatio.ToString(CultureInfo.InvariantCulture);
+            _cfgStatus = $"<color=#6f6>{string.Join(", ", cfg.SourceNames)}: sensitivity {_player.sensitivity:0.###}, " +
+                         $"zoom {_player.zoomSensitivityRatio:0.##}, биндов {applied}, " +
+                         $"прицел {(cfg.Convars.ContainsKey("cl_crosshairsize") ? "из конфига" : "не найден")}</color>";
+            if (!cfg.Convars.ContainsKey("sensitivity"))
+                _cfgStatus += "\n<color=#fc6>sensitivity в этих файлах нет: она лежит в Steam\\userdata\\<id>\\730\\local\\cfg\\cs2_user_convars_0_slot0.vcfg</color>";
+
+            if (persist)
+            {
+                PlayerPrefs.SetString(CfgTextKey, cfg.ToCfgText());
+                PlayerPrefs.Save();
+            }
+        }
+
+        /// <summary>Target of SendMessage("HUD", "LoadConfigText", text) from the WebGL page's file picker.</summary>
+        public void LoadConfigText(string text)
+        {
+            var cfg = new Cs2Config();
+            cfg.AddText(text, "файлы из браузера");
+            ApplyConfig(cfg, persist: true);
+        }
+
+        void LoadConfigPath()
+        {
+            string path = _cfgPath.Trim().Trim('"');
+            if (!File.Exists(path) && !Directory.Exists(path)) { _cfgStatus = "<color=#f66>Нет такого файла или папки.</color>"; return; }
+            var cfg = Cs2Config.Load(path);
+            if (cfg.IsEmpty) { _cfgStatus = "<color=#f66>В этих файлах нет ни кваров, ни биндов.</color>"; return; }
+            PlayerPrefs.SetString(CfgPathKey, path);
+            ApplyConfig(cfg, persist: true);
         }
 
         void SetMenu(bool open)
@@ -95,7 +168,7 @@ namespace CsAim.UI
             if (_menuOpen) DrawMenu();
             else
                 GUI.Label(new Rect(10, Screen.height - 28, 900, 24),
-                    "<color=#bbb>Esc - menu   F1 - restart   1-9 / Q - weapon   R - reload   RMB - scope/silencer   Shift - walk   Ctrl - duck</color>", _label);
+                    "<color=#bbb>Esc - menu   F1 - restart   управление = бинды CS2 (стандартные или из твоего конфига)</color>", _label);
         }
 
         // ------------------------------------------------------------------ crosshair
@@ -111,21 +184,6 @@ namespace CsAim.UI
             var w = _player.Weapon;
             Vector2 c = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
 
-            if (_recoilCrosshair)
-            {
-                // cl_crosshair_recoil: draw where the next bullet goes, not where the camera points.
-                Vector2 off = w.BulletRecoilDeg - w.ViewRecoilDeg;
-                c += new Vector2(PixelsPerDegree(off.y), -PixelsPerDegree(off.x));
-            }
-
-            float gap = 4f;
-            if (_dynamicCrosshair)
-            {
-                // Gap tracks the real cone: inaccuracy + spread, as an angle on screen.
-                float coneDeg = Mathf.Atan(w.CurrentInaccuracy + w.CurrentSpread) * Mathf.Rad2Deg;
-                gap = Mathf.Max(3f, PixelsPerDegree(coneDeg));
-            }
-
             if (w.Def.altIsScope && w.ZoomLevel > 0)
             {
                 Line(new Rect(0, c.y, Screen.width, 1), Color.black);
@@ -133,12 +191,16 @@ namespace CsAim.UI
                 return;
             }
 
-            const float len = 7f, th = 2f;
-            var col = new Color(0.2f, 1f, 0.3f);
-            Line(new Rect(c.x - gap - len, c.y - th * 0.5f, len, th), col);
-            Line(new Rect(c.x + gap, c.y - th * 0.5f, len, th), col);
-            Line(new Rect(c.x - th * 0.5f, c.y - gap - len, th, len), col);
-            Line(new Rect(c.x - th * 0.5f, c.y + gap, th, len), col);
+            if (_crosshair.recoil)
+            {
+                // cl_crosshair_recoil: draw where the next bullet goes, not where the camera points.
+                Vector2 off = w.BulletRecoilDeg - w.ViewRecoilDeg;
+                c += new Vector2(PixelsPerDegree(off.y), -PixelsPerDegree(off.x));
+            }
+
+            // Cone radius on screen: inaccuracy + spread as an angle.
+            float coneDeg = Mathf.Atan(w.CurrentInaccuracy + w.CurrentSpread) * Mathf.Rad2Deg;
+            _crosshair.Draw(c, PixelsPerDegree(coneDeg));
         }
 
         static void Line(Rect r, Color c)
@@ -284,7 +346,7 @@ namespace CsAim.UI
 
         void DrawMenu()
         {
-            var r = new Rect(Screen.width * 0.5f - 340, Screen.height * 0.5f - 320, 680, 640);
+            var r = new Rect(Screen.width * 0.5f - 350, Screen.height * 0.5f - 360, 700, 720);
             GUILayout.BeginArea(r, _box);
             GUILayout.Label("<b>CS Aim Trainer</b>", _big);
 
@@ -339,13 +401,28 @@ namespace CsAim.UI
             _player.Weapon.InfiniteAmmo = GUILayout.Toggle(_player.Weapon.InfiniteAmmo, " sv_infinite_ammo 2 (refill on reload)");
             _scenarios.Impacts.Enabled = GUILayout.Toggle(_scenarios.Impacts.Enabled, " sv_showimpacts 1");
             _scenarios.ShowPatternOnWall = GUILayout.Toggle(_scenarios.ShowPatternOnWall, " show spray drawing on wall");
-            _recoilCrosshair = GUILayout.Toggle(_recoilCrosshair, " cl_crosshair_recoil");
-            _dynamicCrosshair = GUILayout.Toggle(_dynamicCrosshair, " crosshair gap = real inaccuracy cone");
+            _crosshair.recoil = GUILayout.Toggle(_crosshair.recoil, " cl_crosshair_recoil");
+            _crosshair.showCone = GUILayout.Toggle(_crosshair.showCone, " раскрывать прицел по реальному конусу разброса");
             _scenarios.ArmoredTargets = GUILayout.Toggle(_scenarios.ArmoredTargets, " targets have kevlar + helmet");
             _player.invertY = GUILayout.Toggle(_player.invertY, " invert Y");
             GUILayout.EndVertical();
 
             GUILayout.EndHorizontal();
+
+            GUILayout.Space(6);
+            GUILayout.Label("Конфиг CS2 (sensitivity, прицел, бинды): папка game\\csgo\\cfg, userdata\\…\\730\\local\\cfg или файл .cfg/.vcfg", _label);
+            if (IsWeb)
+            {
+                GUILayout.Label("<color=#aaa>В браузере: кнопка «Загрузить конфиг CS2» в правом верхнем углу страницы (можно выбрать несколько файлов).</color>", _label);
+            }
+            else
+            {
+                GUILayout.BeginHorizontal();
+                _cfgPath = GUILayout.TextField(_cfgPath);
+                if (GUILayout.Button("Загрузить", GUILayout.Width(90))) LoadConfigPath();
+                GUILayout.EndHorizontal();
+            }
+            if (_cfgStatus.Length > 0) GUILayout.Label(_cfgStatus, _label);
 
             GUILayout.Space(6);
             if (IsWeb)

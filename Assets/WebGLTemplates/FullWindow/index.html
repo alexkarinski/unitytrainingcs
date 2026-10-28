@@ -11,10 +11,15 @@
               align-items: center; justify-content: center; color: #ccc; font: 16px system-ui, sans-serif; }
     #bar { width: 260px; height: 6px; background: #333; border-radius: 3px; overflow: hidden; }
     #fill { width: 0; height: 100%; background: #4caf50; }
+    #cfg { position: absolute; top: 10px; right: 10px; padding: 7px 12px; border: 0; border-radius: 6px;
+           background: #2e7d32; color: #fff; font: 14px system-ui, sans-serif; cursor: pointer; display: none; }
+    body.unlocked #cfg { display: block; }
   </style>
 </head>
 <body>
   <canvas id="unity-canvas" tabindex="-1"></canvas>
+  <button id="cfg" title="autoexec.cfg, config.cfg, cs2_user_convars_0_slot0.vcfg, cs2_user_keys_0_slot0.vcfg…">Загрузить конфиг CS2</button>
+  <input id="cfg-files" type="file" accept=".cfg,.vcfg,.txt" multiple hidden>
   <div id="loader">
     <div>CS Aim Trainer: загрузка…</div>
     <div id="bar"><div id="fill"></div></div>
@@ -49,11 +54,42 @@
       productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
     }, function (progress) {
       document.querySelector("#fill").style.width = Math.round(progress * 100) + "%";
-    }).then(function () {
+    }).then(function (unity) {
       document.querySelector("#loader").remove();
+      wireConfigUpload(unity);
     }).catch(function (e) {
       document.querySelector("#loader").textContent = "Ошибка загрузки: " + e;
     });
+
+    // The config button is only shown while the mouse is free (menu open), like any page UI.
+    function syncLock() { document.body.classList.toggle("unlocked", !document.pointerLockElement); }
+    document.addEventListener("pointerlockchange", syncLock);
+    syncLock();
+
+    // Read the chosen CS2 config files in the browser and hand their text to the game. Files are
+    // applied in the same order the game would: stock defaults first, autoexec last.
+    function priority(name) {
+      var n = name.toLowerCase();
+      if (n.indexOf("default") >= 0) return 0;
+      if (n.indexOf("cs2_machine_convars") === 0) return 1;
+      if (n.indexOf("cs2_user_") === 0) return 2;
+      if (n === "config.cfg") return 3;
+      if (n === "autoexec.cfg") return 5;
+      return 4;
+    }
+    function wireConfigUpload(unity) {
+      var input = document.querySelector("#cfg-files");
+      document.querySelector("#cfg").addEventListener("click", function () { input.click(); });
+      input.addEventListener("change", function () {
+        var files = Array.prototype.slice.call(input.files)
+          .filter(function (f) { return f.name.toLowerCase().indexOf("gamemode_") !== 0; })
+          .sort(function (a, b) { return priority(a.name) - priority(b.name); });
+        Promise.all(files.map(function (f) { return f.text(); })).then(function (texts) {
+          texts.forEach(function (t) { unity.SendMessage("HUD", "LoadConfigText", t); });
+          input.value = "";
+        });
+      });
+    }
   </script>
 </body>
 </html>

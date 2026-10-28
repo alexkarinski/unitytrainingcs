@@ -174,7 +174,7 @@ namespace CsAim.Training
 
         void Update()
         {
-            bool holding = _player.InputEnabled && Input.GetMouseButton(0);
+            bool holding = _player.AttackHeld;
             if (_wasHolding && !holding)
             {
                 Spray.FinishCurrent();

@@ -17,6 +17,40 @@ static class Tests
         return w;
     }
 
+    static void ConfigTests()
+    {
+        var c = new Cs2Config();
+        c.AddText("\"config\"\n{\n\t\"bindings\"\n\t{\n\t\t\"SPACE\"\t\t\"+jump\"\n\t\t\"MOUSE1\" \"+attack\"\n\t\t\"SHIFT\" \"+sprint\"\n\t}\n\t\"analogbindings\" { \"MOUSE_X\" \"yaw\" }\n}", "user_keys_default.vcfg");
+        Check(c.Binds.Count == 3 && c.Binds[0].Key == "SPACE" && c.Binds[0].Value == "+jump", $"vcfg bindings parsed ({c.Binds.Count}), analogbindings ignored");
+        c.AddText("\"config\" { \"convars\" { \"sensitivity\" \"1.6\" \"cl_crosshairsize\" \"1.5\" } }", "cs2_user_convars_0_slot0.vcfg");
+        Check(c.GetFloat("sensitivity", 0) == 1.6f && c.GetFloat("cl_crosshairsize", 0) == 1.5f, "vcfg convars parsed");
+        c.AddText("// comment\nsensitivity \"2.0\" // later file wins\nbind \"MWHEELDOWN\" \"+jump\"; fps_max \"0\"\nunbind \"MOUSE4\"\necho \"hi there\"", "autoexec.cfg");
+        Check(c.GetFloat("sensitivity", 0) == 2.0f, "cfg overrides vcfg (exec order)");
+        Check(c.Binds[3].Key == "MWHEELDOWN" && c.Binds[3].Value == "+jump" && c.Binds[4].Value == "", "cfg bind / unbind parsed");
+        Check(c.GetFloat("fps_max", -1) == 0f && !c.Convars.ContainsKey("echo"), "semicolon-separated commands; echo ignored");
+        var round = new Cs2Config(); round.AddText(c.ToCfgText(), "saved");
+        Check(round.GetFloat("sensitivity", 0) == 2.0f && round.Binds.Count == c.Binds.Count, "round-trips through saved text");
+        Check(Cs2Config.LoadPriority("user_keys_default.vcfg") < Cs2Config.LoadPriority("cs2_user_keys_0_slot0.vcfg")
+              && Cs2Config.LoadPriority("cs2_user_keys_0_slot0.vcfg") < Cs2Config.LoadPriority("autoexec.cfg"), "folder load order: defaults, user, autoexec");
+        Check(CsAim.Player.InputBindings.TryParseCommand("+sprint", out var a) && a == CsAim.Player.InputAction.Walk, "+sprint is walk in CS2");
+        var bind = new CsAim.Player.InputBindings();
+        Check(bind.Bind("MWHEELDOWN", "+jump") && bind.Describe(CsAim.Player.InputAction.Jump) == "Space", "extra jump bind keeps SPACE");
+        Check(bind.Describe(CsAim.Player.InputAction.InvNext) == "-", "rebinding MWHEELDOWN removes its old invnext");
+        Check(!bind.Bind("F8", "telemetry_server MEM_CAPTURE"), "unrelated commands ignored");
+
+        // Optional: point CSAIM_CFG_DIR at a real csgo/cfg folder to see what would be imported.
+        string dir = Environment.GetEnvironmentVariable("CSAIM_CFG_DIR");
+        if (!string.IsNullOrEmpty(dir))
+        {
+            var real = Cs2Config.Load(dir);
+            Console.WriteLine($"   {dir}: files [{string.Join(", ", real.SourceNames)}], convars {real.Convars.Count}, binds {real.Binds.Count}, " +
+                              $"sensitivity {(real.Convars.TryGetValue("sensitivity", out var sv) ? sv : "not set")}");
+            var rb = new CsAim.Player.InputBindings(); int used = 0;
+            foreach (var kv in real.Binds) if (kv.Value.Length > 0 && rb.Bind(kv.Key, kv.Value)) used++;
+            Console.WriteLine($"   binds usable by the trainer: {used}; jump={rb.Describe(CsAim.Player.InputAction.Jump)} walk={rb.Describe(CsAim.Player.InputAction.Walk)} duck={rb.Describe(CsAim.Player.InputAction.Duck)}");
+        }
+    }
+
     static void PathTests()
     {
         var p = new CsAim.Training.PathTrainer { ToleranceDeg = 0.7f };
@@ -176,6 +210,7 @@ static class Tests
 
         WeaponTests();
         PathTests();
+        ConfigTests();
         Console.WriteLine(fails == 0 ? "ALL PASSED" : $"{fails} FAILED");
         return fails;
     }

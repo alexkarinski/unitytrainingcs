@@ -52,6 +52,24 @@ namespace UnityEngine
         public static Vector3 right => new Vector3(1, 0, 0);
         public static Vector3 left => new Vector3(-1, 0, 0);
     }
+    public enum KeyCode
+    {
+        None, A = 97, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+        Alpha0 = 48, Alpha1, Alpha2, Alpha3, Alpha4, Alpha5, Alpha6, Alpha7, Alpha8, Alpha9,
+        BackQuote = 96, Comma = 44, Period = 46, Slash = 47, Semicolon = 59, Quote = 39, LeftBracket = 91,
+        RightBracket = 93, Backslash = 92, Minus = 45, Equals = 61, F1 = 282, Space = 32, LeftControl = 306,
+        RightControl = 305, LeftShift = 304, RightShift = 303, LeftAlt = 308, RightAlt = 307, Tab = 9,
+        CapsLock = 301, Return = 13, Backspace = 8, Delete = 127, Insert = 277, Home = 278, End = 279,
+        PageUp = 280, PageDown = 281, UpArrow = 273, DownArrow = 274, LeftArrow = 276, RightArrow = 275, Keypad0 = 256,
+    }
+    public static class Input
+    {
+        public static bool GetKey(KeyCode k) => false;
+        public static bool GetKeyDown(KeyCode k) => false;
+        public static bool GetMouseButton(int b) => false;
+        public static bool GetMouseButtonDown(int b) => false;
+        public static Vector2 mouseScrollDelta => default;
+    }
     public class ScriptableObject { public string name; public static T CreateInstance<T>() where T : new() => new T(); }
     public class HeaderAttribute : Attribute { public HeaderAttribute(string s) { } }
     public class TooltipAttribute : Attribute { public TooltipAttribute(string s) { } }

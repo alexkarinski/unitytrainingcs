@@ -52,6 +52,10 @@ namespace CsAim.Player
         public IReadOnlyList<WeaponDefinition> Weapons => _weapons;
         public int WeaponIndex { get; private set; }
 
+        /// <summary>CS2-style key bindings (defaults = stock CS2, can be loaded from your cfg).</summary>
+        public InputBindings Bindings { get; } = new InputBindings();
+        public bool AttackHeld => InputEnabled && Bindings.Held(InputAction.Attack);
+
         public event Action<ShotEvent> Shot;
         public event Action<WeaponController> WeaponChanged;
 
@@ -166,28 +170,35 @@ namespace CsAim.Player
 
         void ReadButtons()
         {
-            if (Input.GetMouseButtonDown(0)) _attackPressedLatch = true;
-            if (Input.GetKeyDown(KeyCode.Space) || Input.mouseScrollDelta.y < 0f) _jumpLatch = true;
-            if (Input.GetMouseButtonDown(1)) Weapon?.ToggleAlt();
-            if (Input.GetKeyDown(KeyCode.R)) Weapon?.StartReload();
-            if (Input.GetKeyDown(KeyCode.Q)) SelectWeapon(_previousWeapon);
+            var b = Bindings;
+            if (b.Pressed(InputAction.Attack)) _attackPressedLatch = true;
+            if (b.Pressed(InputAction.Jump)) _jumpLatch = true;
+            if (b.Pressed(InputAction.Attack2)) Weapon?.ToggleAlt();
+            if (b.Pressed(InputAction.Reload)) Weapon?.StartReload();
+            if (b.Pressed(InputAction.LastInv)) SelectWeapon(_previousWeapon);
+            if (_weapons.Count > 0)
+            {
+                if (b.Pressed(InputAction.InvNext)) SelectWeapon((WeaponIndex + 1) % _weapons.Count);
+                if (b.Pressed(InputAction.InvPrev)) SelectWeapon((WeaponIndex + _weapons.Count - 1) % _weapons.Count);
+            }
 
             for (int i = 0; i < 9; i++)
-                if (Input.GetKeyDown(KeyCode.Alpha1 + i)) SelectWeapon(i);
+                if (b.Pressed(InputAction.Slot1 + i)) SelectWeapon(i);
         }
 
         void SimulateTick(float dt)
         {
             bool input = InputEnabled;
-            Walking = input && Input.GetKey(KeyCode.LeftShift);
-            bool duck = input && Input.GetKey(KeyCode.LeftControl);
+            var b = Bindings;
+            Walking = input && b.Held(InputAction.Walk);
+            bool duck = input && b.Held(InputAction.Duck);
 
             // Wish direction in the yaw plane (pitch never affects ground movement).
             Vector3 wish = Vector3.zero;
             if (input)
             {
-                float fwd = (Input.GetKey(KeyCode.W) ? 1f : 0f) - (Input.GetKey(KeyCode.S) ? 1f : 0f);
-                float side = (Input.GetKey(KeyCode.D) ? 1f : 0f) - (Input.GetKey(KeyCode.A) ? 1f : 0f);
+                float fwd = (b.Held(InputAction.Forward) ? 1f : 0f) - (b.Held(InputAction.Back) ? 1f : 0f);
+                float side = (b.Held(InputAction.Right) ? 1f : 0f) - (b.Held(InputAction.Left) ? 1f : 0f);
                 var yawRot = Quaternion.Euler(0f, _eyeAngles.y, 0f);
                 wish = yawRot * new Vector3(side, 0f, fwd);
                 if (wish.sqrMagnitude > 1f) wish.Normalize();
@@ -234,7 +245,7 @@ namespace CsAim.Player
                     walking = Walking,
                     duckAmount = _move.DuckAmount,
                 };
-                bool rawHeld = input && Input.GetMouseButton(0);
+                bool rawHeld = input && b.Held(InputAction.Attack);
                 if (!rawHeld) _blockFire = false;
                 bool held = rawHeld && !_blockFire;
                 Weapon.Tick(_simTime, dt, owner, held, _attackPressedLatch && !_blockFire);
