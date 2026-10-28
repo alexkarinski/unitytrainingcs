@@ -1,0 +1,7 @@
+<linker>
+  <!-- Every collider, the CharacterController and raycasts are created from code at runtime,
+       so nothing in the scene tells the build that physics is used. Keep it explicitly. -->
+  <assembly fullname="UnityEngine.PhysicsModule" preserve="all" />
+  <assembly fullname="UnityEngine.TextRenderingModule" preserve="all" />
+  <assembly fullname="UnityEngine.IMGUIModule" preserve="all" />
+</linker>

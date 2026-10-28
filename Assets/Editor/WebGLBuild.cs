@@ -27,6 +27,9 @@ namespace CsAim.EditorTools
             PlayerSettings.WebGL.template = "PROJECT:FullWindow";
             PlayerSettings.WebGL.exceptionSupport = WebGLExceptionSupport.ExplicitlyThrownExceptionsOnly;
             PlayerSettings.WebGL.dataCaching = true;
+            // The scene is built from code, so native engine stripping can't see that physics
+            // (colliders, CharacterController, raycasts) is used and removes it. Keep all modules.
+            PlayerSettings.stripEngineCode = false;
 
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {

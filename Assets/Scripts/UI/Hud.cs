@@ -20,6 +20,7 @@ namespace CsAim.UI
         string _sensText, _zoomText, _dpiText, _importPath, _importStatus = string.Empty;
         string _cfgPath, _cfgStatus = string.Empty;
         GUIStyle _label, _big, _box;
+        Font _font, _fontBold;
         Vector2 _weaponScroll;
 
         const string SensKey = "csaim.sensitivity";
@@ -54,7 +55,8 @@ namespace CsAim.UI
                 ApplyConfig(cfg, persist: false);
                 _cfgStatus = "<color=#999>применён сохранённый конфиг CS2</color>";
             }
-            SetMenu(false);
+            // A browser only grants pointer lock after a click, so start on the menu there.
+            SetMenu(IsWeb);
         }
 
         const string DefaultCfgFolder =
@@ -100,6 +102,12 @@ namespace CsAim.UI
         }
 
         /// <summary>Target of SendMessage("HUD", "LoadConfigText", text) from the WebGL page's file picker.</summary>
+        /// <summary>Called by the WebGL page when the browser releases pointer lock (Esc, alt-tab).</summary>
+        public void OnPointerUnlocked(string _)
+        {
+            if (!_menuOpen) SetMenu(true);
+        }
+
         public void LoadConfigText(string text)
         {
             var cfg = new Cs2Config();
@@ -140,9 +148,16 @@ namespace CsAim.UI
         void EnsureStyles()
         {
             if (_label != null) return;
+            // WebGL can't use system fonts and Unity's built-in one has no Cyrillic, so ship our own.
+            _font = Resources.Load<Font>("Fonts/DejaVuSans");
+            _fontBold = Resources.Load<Font>("Fonts/DejaVuSans-Bold");
+            if (_font != null) GUI.skin.font = _font;
+
             _label = new GUIStyle(GUI.skin.label) { fontSize = 15, richText = true };
             _label.normal.textColor = Color.white;
-            _big = new GUIStyle(_label) { fontSize = 22, fontStyle = FontStyle.Bold };
+            _big = new GUIStyle(_label) { fontSize = 22 };
+            if (_fontBold != null) _big.font = _fontBold;
+            else _big.fontStyle = FontStyle.Bold;
             _box = new GUIStyle(GUI.skin.box);
             _box.normal.background = Solid(new Color(0f, 0f, 0f, 0.55f));
         }
@@ -159,6 +174,7 @@ namespace CsAim.UI
         {
             if (_player == null || _player.Weapon == null) return;
             EnsureStyles();
+            if (_font != null) GUI.skin.font = _font;   // buttons, text fields and toggles too
 
             DrawCrosshair();
             DrawStatus();
