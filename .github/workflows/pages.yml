@@ -2,7 +2,8 @@
 #
 # One-time setup (repository Settings):
 #   1. Secrets and variables > Actions: add UNITY_LICENSE (contents of your Unity_lic.ulf),
-#      UNITY_EMAIL and UNITY_PASSWORD. A free Personal license works.
+#      UNITY_EMAIL and UNITY_PASSWORD. A free Personal license works; the .ulf file appears in
+#      C:\ProgramData\Unity\ after signing in to Unity Hub (no Editor install needed).
 #   2. Pages > Build and deployment > Source: "GitHub Actions".
 name: WebGL to GitHub Pages
 
@@ -39,6 +40,18 @@ jobs:
             echo "::error::Missing repository secrets:$missing. See the comment at the top of .github/workflows/pages.yml."
             exit 1
           fi
+
+      # The Unity WebGL image is several GB; make room on the hosted runner first.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: false
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: true
 
       - uses: actions/checkout@v4
 
