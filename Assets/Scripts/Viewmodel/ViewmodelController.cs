@@ -26,8 +26,10 @@ namespace CsAim.Viewmodel
         /// and right of the crosshair; pistols closer to the centre.
         /// </summary>
         static Vector3 BasePosition(WeaponKind kind) =>
-            kind == WeaponKind.Pistol ? new Vector3(4.5f, -4.6f, 17f) : new Vector3(7f, -6f, 22f);
-        const float InwardYaw = -3f;
+            kind == WeaponKind.Pistol ? new Vector3(5.5f, -5.6f, 21f) : new Vector3(8.5f, -7f, 26f);
+        /// <summary>Turned slightly towards the centre and rolled, so the gun is seen a little from the side.</summary>
+        static Quaternion BaseRotation(WeaponKind kind) =>
+            kind == WeaponKind.Pistol ? Quaternion.Euler(0f, -4f, -2f) : Quaternion.Euler(0f, -6f, -3f);
 
         PlayerController _player;
         Camera _vmCamera;
@@ -183,7 +185,7 @@ namespace CsAim.Viewmodel
 
             _vmCamera.fieldOfView = 2f * Mathf.Atan(Mathf.Tan(viewmodelFov * 0.5f * Mathf.Deg2Rad) * 0.75f) * Mathf.Rad2Deg;
             _rigRoot.localPosition = BasePosition(_rig.kind) + new Vector3(offset.x - 2.5f, offset.y, offset.z + 1.5f);
-            _rigRoot.localRotation = Quaternion.Euler(0f, InwardYaw, 0f);
+            _rigRoot.localRotation = BaseRotation(_rig.kind);
 
             // --- springs: recoil kick
             Spring(ref _kickPos, ref _kickPosVel, 260f, 26f, dt);
