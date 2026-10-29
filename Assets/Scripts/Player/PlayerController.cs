@@ -42,6 +42,8 @@ namespace CsAim.Player
 
         public Camera Camera { get; private set; }
         public Vector2 EyeAngles => _eyeAngles;
+        /// <summary>View rotation applied by the mouse this frame (pitch up, yaw right), for viewmodel sway.</summary>
+        public Vector2 LookDeltaThisFrame { get; private set; }
         public Vector3 Velocity => _move.Velocity;
         public float Speed2D => new Vector2(_move.Velocity.x, _move.Velocity.z).magnitude;
         public bool OnGround { get; private set; } = true;
@@ -132,6 +134,7 @@ namespace CsAim.Player
         {
             if (Camera == null) return;
 
+            LookDeltaThisFrame = Vector2.zero;
             if (InputEnabled)
             {
                 if (_skipMouseFrames > 0) _skipMouseFrames--;
@@ -174,6 +177,7 @@ namespace CsAim.Player
             float zoomScale = fov < fov4by3 ? fov / fov4by3 * zoomSensitivityRatio : 1f;
             float s = sensitivity * zoomScale;
 
+            LookDeltaThisFrame = new Vector2((invertY ? -dy : dy) * s * CsConstants.MPitch, dx * s * CsConstants.MYaw);
             _eyeAngles.y += dx * s * CsConstants.MYaw;
             _eyeAngles.x += (invertY ? -dy : dy) * s * CsConstants.MPitch;
             _eyeAngles.x = Mathf.Clamp(_eyeAngles.x, -CsConstants.MaxPitch, CsConstants.MaxPitch);

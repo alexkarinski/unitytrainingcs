@@ -3,6 +3,7 @@ using CsAim.Data;
 using CsAim.Player;
 using CsAim.Training;
 using CsAim.UI;
+using CsAim.Viewmodel;
 using UnityEngine;
 
 namespace CsAim.Bootstrap
@@ -31,8 +32,11 @@ namespace CsAim.Bootstrap
             var scenarios = new GameObject("Scenarios").AddComponent<ScenarioManager>();
             scenarios.Init(player, sprayWall);
 
+            var viewmodel = cam.gameObject.AddComponent<ViewmodelController>();
+            viewmodel.Init(player, cam);
+
             var hud = new GameObject("HUD").AddComponent<Hud>();
-            hud.Init(player, scenarios);
+            hud.Init(player, scenarios, viewmodel);
         }
 
         static Camera BuildCamera()

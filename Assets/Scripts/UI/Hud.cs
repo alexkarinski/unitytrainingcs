@@ -5,6 +5,7 @@ using CsAim.Core;
 using CsAim.Data;
 using CsAim.Player;
 using CsAim.Training;
+using CsAim.Viewmodel;
 using UnityEngine;
 
 namespace CsAim.UI
@@ -14,6 +15,8 @@ namespace CsAim.UI
     {
         PlayerController _player;
         ScenarioManager _scenarios;
+        ViewmodelController _viewmodel;
+        Texture2D _scopeMask;
 
         bool _menuOpen;
         readonly Crosshair _crosshair = new Crosshair { showCone = true };
@@ -21,7 +24,7 @@ namespace CsAim.UI
         string _cfgPath, _cfgStatus = string.Empty;
         GUIStyle _label, _big, _box;
         Font _font, _fontBold;
-        Vector2 _weaponScroll;
+        Vector2 _weaponScroll, _settingsScroll;
 
         const string SensKey = "csaim.sensitivity";
         const string ZoomKey = "csaim.zoom_ratio";
@@ -32,10 +35,14 @@ namespace CsAim.UI
 
         static bool IsWeb => Application.platform == RuntimePlatform.WebGLPlayer;
 
-        public void Init(PlayerController player, ScenarioManager scenarios)
+        const string VmKey = "csaim.viewmodel";
+
+        public void Init(PlayerController player, ScenarioManager scenarios, ViewmodelController viewmodel)
         {
             _player = player;
             _scenarios = scenarios;
+            _viewmodel = viewmodel;
+            LoadViewmodelPrefs();
             player.sensitivity = PlayerPrefs.GetFloat(SensKey, player.sensitivity);
             player.zoomSensitivityRatio = PlayerPrefs.GetFloat(ZoomKey, player.zoomSensitivityRatio);
             player.dpi = PlayerPrefs.GetFloat(DpiKey, player.dpi);
@@ -76,6 +83,16 @@ namespace CsAim.UI
                 PlayerPrefs.SetFloat(ZoomKey, zr);
             }
             _crosshair.Apply(cfg);
+            if (_viewmodel != null)
+            {
+                _viewmodel.viewmodelFov = Mathf.Clamp(cfg.GetFloat("viewmodel_fov", _viewmodel.viewmodelFov), 54f, 68f);
+                _viewmodel.offset = new Vector3(
+                    Mathf.Clamp(cfg.GetFloat("viewmodel_offset_x", _viewmodel.offset.x), -2.5f, 2.5f),
+                    Mathf.Clamp(cfg.GetFloat("viewmodel_offset_y", _viewmodel.offset.y), -2f, 2f),
+                    Mathf.Clamp(cfg.GetFloat("viewmodel_offset_z", _viewmodel.offset.z), -2f, 2f));
+                _viewmodel.leftHanded = cfg.GetBool("cl_prefer_lefthanded", _viewmodel.leftHanded);
+                SaveViewmodelPrefs();
+            }
 
             var b = _player.Bindings;
             int applied = 0;
@@ -206,8 +223,7 @@ namespace CsAim.UI
 
             if (w.Def.altIsScope && w.ZoomLevel > 0)
             {
-                Line(new Rect(0, c.y, Screen.width, 1), Color.black);
-                Line(new Rect(c.x, 0, 1, Screen.height), Color.black);
+                DrawScope(c);
                 return;
             }
 
@@ -221,6 +237,55 @@ namespace CsAim.UI
             // Cone radius on screen: inaccuracy + spread as an angle.
             float coneDeg = Mathf.Atan(w.CurrentInaccuracy + w.CurrentSpread) * Mathf.Rad2Deg;
             _crosshair.Draw(c, PixelsPerDegree(coneDeg));
+        }
+
+        /// <summary>Sniper scope: black everywhere except a circle, with thin cross lines.</summary>
+        void DrawScope(Vector2 c)
+        {
+            if (_scopeMask == null)
+            {
+                const int n = 512;
+                _scopeMask = new Texture2D(n, n, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+                var px = new Color32[n * n];
+                for (int y = 0; y < n; y++)
+                    for (int x = 0; x < n; x++)
+                    {
+                        float dx = x - n * 0.5f + 0.5f, dy = y - n * 0.5f + 0.5f;
+                        float d = Mathf.Sqrt(dx * dx + dy * dy) / (n * 0.5f);
+                        byte a = (byte)(255 * Mathf.Clamp01((d - 0.985f) / 0.015f));
+                        px[y * n + x] = new Color32(0, 0, 0, a);
+                    }
+                _scopeMask.SetPixels32(px);
+                _scopeMask.Apply();
+            }
+            float size = Screen.height;
+            var r = new Rect(c.x - size * 0.5f, 0, size, size);
+            GUI.DrawTexture(r, _scopeMask);
+            Line(new Rect(0, 0, r.x + 1, Screen.height), Color.black);
+            Line(new Rect(r.xMax - 1, 0, Screen.width - r.xMax + 1, Screen.height), Color.black);
+            Line(new Rect(r.x, c.y, size, 1), Color.black);
+            Line(new Rect(c.x, 0, 1, Screen.height), Color.black);
+        }
+
+        void LoadViewmodelPrefs()
+        {
+            if (_viewmodel == null) return;
+            _viewmodel.viewmodelFov = PlayerPrefs.GetFloat(VmKey + ".fov", _viewmodel.viewmodelFov);
+            _viewmodel.offset = new Vector3(PlayerPrefs.GetFloat(VmKey + ".x", _viewmodel.offset.x),
+                PlayerPrefs.GetFloat(VmKey + ".y", _viewmodel.offset.y), PlayerPrefs.GetFloat(VmKey + ".z", _viewmodel.offset.z));
+            _viewmodel.leftHanded = PlayerPrefs.GetInt(VmKey + ".left", 0) == 1;
+            _viewmodel.visible = PlayerPrefs.GetInt(VmKey + ".visible", 1) == 1;
+        }
+
+        void SaveViewmodelPrefs()
+        {
+            if (_viewmodel == null) return;
+            PlayerPrefs.SetFloat(VmKey + ".fov", _viewmodel.viewmodelFov);
+            PlayerPrefs.SetFloat(VmKey + ".x", _viewmodel.offset.x);
+            PlayerPrefs.SetFloat(VmKey + ".y", _viewmodel.offset.y);
+            PlayerPrefs.SetFloat(VmKey + ".z", _viewmodel.offset.z);
+            PlayerPrefs.SetInt(VmKey + ".left", _viewmodel.leftHanded ? 1 : 0);
+            PlayerPrefs.SetInt(VmKey + ".visible", _viewmodel.visible ? 1 : 0);
         }
 
         static void Line(Rect r, Color c)
@@ -392,6 +457,7 @@ namespace CsAim.UI
             GUILayout.EndVertical();
 
             GUILayout.BeginVertical();
+            _settingsScroll = GUILayout.BeginScrollView(_settingsScroll, GUILayout.Height(330));
             GUILayout.Label("Settings (same values as CS2)", _label);
             GUILayout.BeginHorizontal();
             GUILayout.Label("sensitivity", _label, GUILayout.Width(170));
@@ -425,6 +491,26 @@ namespace CsAim.UI
             _crosshair.showCone = GUILayout.Toggle(_crosshair.showCone, " раскрывать прицел по реальному конусу разброса");
             _scenarios.ArmoredTargets = GUILayout.Toggle(_scenarios.ArmoredTargets, " targets have kevlar + helmet");
             _player.invertY = GUILayout.Toggle(_player.invertY, " invert Y");
+            if (_viewmodel != null)
+            {
+                bool vis = GUILayout.Toggle(_viewmodel.visible, " руки и оружие");
+                bool left = GUILayout.Toggle(_viewmodel.leftHanded, " левая рука (switchhands)");
+                GUILayout.Label($"viewmodel_fov {_viewmodel.viewmodelFov:0}   offset {_viewmodel.offset.x:0.0} / {_viewmodel.offset.y:0.0} / {_viewmodel.offset.z:0.0}", _label);
+                float fov = Mathf.Round(GUILayout.HorizontalSlider(_viewmodel.viewmodelFov, 54f, 68f));
+                float ox = Mathf.Round(GUILayout.HorizontalSlider(_viewmodel.offset.x, -2.5f, 2.5f) * 2f) / 2f;
+                float oy = Mathf.Round(GUILayout.HorizontalSlider(_viewmodel.offset.y, -2f, 2f) * 2f) / 2f;
+                float oz = Mathf.Round(GUILayout.HorizontalSlider(_viewmodel.offset.z, -2f, 2f) * 2f) / 2f;
+                var off = new Vector3(ox, oy, oz);
+                if (vis != _viewmodel.visible || left != _viewmodel.leftHanded || fov != _viewmodel.viewmodelFov || off != _viewmodel.offset)
+                {
+                    _viewmodel.visible = vis;
+                    _viewmodel.leftHanded = left;
+                    _viewmodel.viewmodelFov = fov;
+                    _viewmodel.offset = off;
+                    SaveViewmodelPrefs();
+                }
+            }
+            GUILayout.EndScrollView();
             GUILayout.EndVertical();
 
             GUILayout.EndHorizontal();

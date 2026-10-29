@@ -6,7 +6,7 @@ namespace CsAim.Player
     public enum InputAction
     {
         Attack, Attack2, Jump, Duck, Walk, Forward, Back, Left, Right, Reload,
-        LastInv, InvNext, InvPrev,
+        LastInv, InvNext, InvPrev, Inspect, SwitchHands,
         Slot1, Slot2, Slot3, Slot4, Slot5, Slot6, Slot7, Slot8, Slot9,
     }
 
@@ -42,6 +42,8 @@ namespace CsAim.Player
             Bind("d", "+right");
             Bind("r", "+reload");
             Bind("q", "lastinv");
+            Bind("f", "+lookatweapon");
+            Bind("h", "switchhands");
             Bind("MWHEELDOWN", "invnext");
             Bind("MWHEELUP", "invprev");
             for (int i = 1; i <= 9; i++) Bind(i.ToString(), "slot" + i);
@@ -129,6 +131,8 @@ namespace CsAim.Player
                 case "lastinv": action = InputAction.LastInv; return true;
                 case "invnext": action = InputAction.InvNext; return true;
                 case "invprev": action = InputAction.InvPrev; return true;
+                case "+lookatweapon": action = InputAction.Inspect; return true;
+                case "switchhands": case "switchhandsleft": case "switchhandsright": action = InputAction.SwitchHands; return true;
             }
             if (cmd.StartsWith("slot") && int.TryParse(cmd.Substring(4), out int n) && n >= 1 && n <= 9)
             {
