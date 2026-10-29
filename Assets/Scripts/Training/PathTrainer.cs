@@ -10,10 +10,27 @@ namespace CsAim.Training
     ///
     /// Spread is excluded from the pass/fail check on purpose: it is random, and failing someone
     /// for a lucky/unlucky roll would teach nothing. It still counts for the on-target rate.
+    ///
+    /// The goal is a reflex, so the visual guide is taken away in steps: line + next-bullet marker,
+    /// then a faint line, then nothing (muscle memory only). Each step unlocks after a few clean
+    /// full-magazine sprays. Per-bullet error is kept across attempts to show the weak segment.
     /// </summary>
     public sealed class PathTrainer
     {
         public enum Outcome { Continue, Failed, Completed }
+
+        /// <summary>How much of the drawing is shown while spraying.</summary>
+        public enum Guide { Full, Line, Blind }
+
+        public Guide GuideLevel { get; private set; } = Guide.Full;
+        /// <summary>Remove a guide step automatically after enough clean full sprays.</summary>
+        public bool AutoFade = true;
+        public const int CleanToAdvance = 3;
+        public int CleanAtLevel { get; private set; }
+
+        const int MaxBullets = 64;
+        readonly float[] _errorSumAt = new float[MaxBullets];
+        readonly int[] _errorCountAt = new int[MaxBullets];
 
         /// <summary>Allowed deviation in degrees. 0.7 is about a head's radius at 10 m.</summary>
         public float ToleranceDeg = 0.7f;
@@ -57,6 +74,45 @@ namespace CsAim.Training
             _shots = _onTarget = 0;
             _scoreSum = _errorSum = _lastError = 0f;
             Message = string.Empty;
+            GuideLevel = Guide.Full;
+            CleanAtLevel = 0;
+            System.Array.Clear(_errorSumAt, 0, MaxBullets);
+            System.Array.Clear(_errorCountAt, 0, MaxBullets);
+        }
+
+        public void SetGuide(Guide level)
+        {
+            GuideLevel = level;
+            CleanAtLevel = 0;
+        }
+
+        /// <summary>Average error of bullet i over all attempts, or -1 if it was never fired.</summary>
+        public float MeanErrorAt(int i) =>
+            i < 0 || i >= MaxBullets || _errorCountAt[i] == 0 ? -1f : _errorSumAt[i] / _errorCountAt[i];
+
+        /// <summary>The run of <paramref name="window"/> consecutive bullets with the highest mean error.</summary>
+        public bool TryWeakestSegment(int window, out int start, out float meanError)
+        {
+            start = -1;
+            meanError = 0f;
+            int limit = Mathf.Min(ClipSize, MaxBullets);
+            for (int s = 1; s + window <= limit; s++)        // bullet 1 has no recoil yet: skip it
+            {
+                float sum = 0f;
+                int n = 0;
+                for (int i = s; i < s + window; i++)
+                {
+                    if (_errorCountAt[i] < 2) { n = 0; break; }
+                    sum += _errorSumAt[i] / _errorCountAt[i];
+                    n++;
+                }
+                if (n == window && sum / n > meanError)
+                {
+                    meanError = sum / n;
+                    start = s;
+                }
+            }
+            return start >= 0;
         }
 
         public void SetProgressive(bool progressive)
@@ -87,6 +143,11 @@ namespace CsAim.Training
             _shots++;
             _errorSum += error;
             _scoreSum += Mathf.Clamp01(1f - error / ToleranceDeg);
+            if (shotIndex < MaxBullets)
+            {
+                _errorSumAt[shotIndex] += error;
+                _errorCountAt[shotIndex]++;
+            }
             if ((mouse + recoilDeg + spreadDeg).magnitude <= ToleranceDeg) _onTarget++;
 
             CurrentBullet = shotIndex + 1;
@@ -112,7 +173,22 @@ namespace CsAim.Training
                 }
                 else
                 {
-                    Say($"Чистый спрей на {CurrentBullet} пуль!", true, now);
+                    CleanAtLevel++;
+                    if (AutoFade && GuideLevel != Guide.Blind && CleanAtLevel >= CleanToAdvance)
+                    {
+                        // Next step towards muscle memory: less to look at, start short again.
+                        GuideLevel = GuideLevel == Guide.Full ? Guide.Line : Guide.Blind;
+                        CleanAtLevel = 0;
+                        TargetLength = Progressive ? Mathf.Min(ProgressiveStart, ClipSize) : ClipSize;
+                        Say(GuideLevel == Guide.Line
+                            ? "Отлично! Маркер убран, осталась бледная линия."
+                            : "Отлично! Теперь вслепую: только по памяти руки.", true, now);
+                    }
+                    else
+                    {
+                        string next = AutoFade && GuideLevel != Guide.Blind ? $" ({CleanAtLevel}/{CleanToAdvance} до снятия подсказок)" : "";
+                        Say($"Чистый спрей на {CurrentBullet} пуль!{next}", true, now);
+                    }
                 }
                 return Outcome.Completed;
             }

@@ -57,7 +57,9 @@ namespace CsAim.Training
         PlayerController _player;
         readonly List<Target> _targets = new List<Target>();
         GameObject _sprayRig;
-        LineRenderer _ghostLine, _idealLine;
+        LineRenderer _ghostLine, _idealLine, _traceLine;
+        readonly List<Vector3> _trace = new List<Vector3>();
+        bool _wasPathActive;
         Transform _nextPoint;
         Transform _wall;
         bool _wasHolding;
@@ -87,6 +89,8 @@ namespace CsAim.Training
             _sprayRig.SetActive(spray);
             _nextPoint.gameObject.SetActive(s == Scenario.RecoilPath);
             Path.Reset(_player.Weapon != null ? _player.Weapon.Def.clipSize : 30);
+            _trace.Clear();
+            if (_traceLine != null) _traceLine.positionCount = 0;
             _wall.gameObject.SetActive(spray);
             Spray.MinShotsToScore = Mathf.Min(10, _player.Weapon != null ? _player.Weapon.Def.clipSize : 10);
 
@@ -183,12 +187,48 @@ namespace CsAim.Training
             if (!_wasHolding && holding && Current == Scenario.RecoilPath) Impacts.Clear();
             _wasHolding = holding;
 
-            if (Current == Scenario.RecoilPath) UpdateNextPoint();
+            bool pathMode = Current == Scenario.RecoilPath;
+            bool attempt = pathMode && Path.Active;
+            if (pathMode)
+            {
+                UpdateNextPoint();
+                RecordTrace(attempt);
+            }
+            _wasPathActive = attempt;
 
             if (_ghostLine != null)
             {
-                _ghostLine.enabled = ShowPatternOnWall;
-                _idealLine.enabled = ShowPatternOnWall;
+                // What the player gets to see depends on the guide level, but only while spraying:
+                // between attempts the drawing and their own mouse trace are shown for review.
+                var guide = Path.GuideLevel;
+                _idealLine.enabled = ShowPatternOnWall && !(attempt && guide == PathTrainer.Guide.Blind);
+                float idealAlpha = attempt && guide == PathTrainer.Guide.Line ? 0.25f : 0.9f;
+                _idealLine.startColor = _idealLine.endColor = new Color(0.2f, 1f, 0.35f, idealAlpha);
+                _ghostLine.enabled = ShowPatternOnWall && !(attempt && guide != PathTrainer.Guide.Full);
+                _nextPoint.gameObject.SetActive(pathMode && !(attempt && guide != PathTrainer.Guide.Full));
+                _traceLine.enabled = pathMode && !attempt && _traceLine.positionCount > 1;
+            }
+        }
+
+        /// <summary>
+        /// Records where the crosshair actually went during an attempt (relative to where the spray
+        /// started, like the green line) and shows it afterwards in orange next to the ideal path.
+        /// </summary>
+        void RecordTrace(bool attempt)
+        {
+            if (attempt && !_wasPathActive) _trace.Clear();
+            if (attempt)
+            {
+                Vector2 rel = _player.EyeAngles - Path.StartEye;
+                rel.y = Mathf.DeltaAngle(0f, rel.y);
+                Vector2 crosshair = rel + _player.Weapon.ViewRecoilDeg;
+                Vector3 eye = new Vector3(0f, CsConstants.StandEyeHeight, 0f);
+                _trace.Add(Project(eye, crosshair) - Vector3.forward * 0.3f);
+            }
+            else if (_wasPathActive && _trace.Count > 1)
+            {
+                _traceLine.positionCount = _trace.Count;
+                _traceLine.SetPositions(_trace.ToArray());
             }
         }
 
@@ -213,6 +253,7 @@ namespace CsAim.Training
 
             _ghostLine = MakeLine("UncompensatedPattern", new Color(0.25f, 0.55f, 1f, 0.9f));
             _idealLine = MakeLine("IdealMousePath", new Color(0.2f, 1f, 0.35f, 0.9f));
+            _traceLine = MakeLine("YourMousePath", new Color(1f, 0.55f, 0.1f, 0.95f));
         }
 
         LineRenderer MakeLine(string name, Color c)

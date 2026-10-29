@@ -386,11 +386,18 @@ namespace CsAim.UI
         void DrawPathPanel()
         {
             var p = _scenarios.Path;
-            const float pw = 330, ph = 300;
+            const float pw = 330, ph = 430;
             var rect = new Rect(Screen.width - pw - 10, 210, pw, ph);
             GUILayout.BeginArea(rect, _box);
-            GUILayout.Label("<b>Веди прицел по зелёной линии</b>", _label);
-            GUILayout.Label($"<color=#999>Жёлтый квадрат = где должен быть прицел для следующей пули, его размер = допуск {p.ToleranceDeg:0.00}°</color>", _label);
+            string guide = p.GuideLevel == PathTrainer.Guide.Full ? "линия + маркер"
+                : p.GuideLevel == PathTrainer.Guide.Line ? "бледная линия" : "вслепую";
+            GUILayout.Label($"<b>Веди прицел по зелёной линии</b>   подсказки: <b>{guide}</b>", _label);
+            if (p.GuideLevel == PathTrainer.Guide.Full)
+                GUILayout.Label($"<color=#999>Жёлтый квадрат = где должен быть прицел для следующей пули, его размер = допуск {p.ToleranceDeg:0.00}°</color>", _label);
+            else if (p.GuideLevel == PathTrainer.Guide.Blind)
+                GUILayout.Label("<color=#999>Во время очереди ничего не видно: веди по памяти руки. После попытки — твой след (оранжевый) и идеал (зелёный).</color>", _label);
+            if (p.AutoFade && p.GuideLevel != PathTrainer.Guide.Blind)
+                GUILayout.Label($"<color=#999>до снятия подсказок: {p.CleanAtLevel}/{PathTrainer.CleanToAdvance} чистых полных спреев</color>", _label);
 
             // Progress through the current attempt.
             GUILayout.Label($"цель: <b>{p.TargetLength}</b> пуль{(p.Progressive ? " (растёт на 5 после чистого прохода)" : "")}", _label);
@@ -406,6 +413,24 @@ namespace CsAim.UI
             GUILayout.Label($"средняя ошибка  {p.MeanErrorDeg:0.00}°   последняя {p.LastErrorDeg:0.00}°", _label);
             GUILayout.Label($"пули в цель (с разбросом)  {p.OnTargetRate:0}%", _label);
             GUILayout.Label($"попыток {p.Attempts}   чистых {p.CleanSprays}   рекорд {p.BestBullets} пуль", _label);
+
+            // Average error per bullet over all attempts: shows which part of the pattern fails.
+            var chart = GUILayoutUtility.GetRect(pw - 20, 46);
+            Line(chart, new Color(1, 1, 1, 0.06f));
+            int n = Mathf.Max(1, p.ClipSize);
+            float bw = chart.width / n;
+            for (int i = 0; i < n; i++)
+            {
+                float e = p.MeanErrorAt(i);
+                if (e < 0f) continue;
+                float k = Mathf.Clamp01(e / p.ToleranceDeg);
+                float h = Mathf.Max(1f, chart.height * k);
+                Line(new Rect(chart.x + i * bw + 1, chart.yMax - h, Mathf.Max(1f, bw - 2), h), Color.Lerp(new Color(0.3f, 0.9f, 0.4f), new Color(1f, 0.3f, 0.25f), k));
+            }
+            if (p.TryWeakestSegment(5, out int ws, out float we))
+                GUILayout.Label($"слабое место: пули <b>{ws + 1}–{ws + 5}</b> (в среднем {we:0.00}°)", _label);
+            else
+                GUILayout.Label("<color=#999>график: средняя ошибка по каждой пуле</color>", _label);
 
             if (p.Message.Length > 0 && Time.time - p.MessageTime < 4f)
             {
@@ -483,6 +508,13 @@ namespace CsAim.UI
             }
             bool prog = GUILayout.Toggle(_scenarios.Path.Progressive, " траектория: начинать с 10 пуль и наращивать");
             if (prog != _scenarios.Path.Progressive) _scenarios.Path.SetProgressive(prog);
+            _scenarios.Path.AutoFade = GUILayout.Toggle(_scenarios.Path.AutoFade, " снимать подсказки по мере успехов");
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("подсказки:", _label, GUILayout.Width(90));
+            GuideButton(PathTrainer.Guide.Full, "все");
+            GuideButton(PathTrainer.Guide.Line, "линия");
+            GuideButton(PathTrainer.Guide.Blind, "вслепую");
+            GUILayout.EndHorizontal();
 
             _player.Weapon.InfiniteAmmo = GUILayout.Toggle(_player.Weapon.InfiniteAmmo, " sv_infinite_ammo 2 (refill on reload)");
             _scenarios.Impacts.Enabled = GUILayout.Toggle(_scenarios.Impacts.Enabled, " sv_showimpacts 1");
@@ -551,6 +583,13 @@ namespace CsAim.UI
             if (!IsWeb && GUILayout.Button("Quit", GUILayout.Height(30))) Application.Quit();
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
+        }
+
+        void GuideButton(PathTrainer.Guide level, string text)
+        {
+            bool selected = _scenarios.Path.GuideLevel == level;
+            // Only act on a change, or the level's progress would be reset every frame.
+            if (GUILayout.Toggle(selected, text, GUI.skin.button) && !selected) _scenarios.Path.SetGuide(level);
         }
 
         void ApplySettings()

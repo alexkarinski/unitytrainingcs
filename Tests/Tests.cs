@@ -163,6 +163,29 @@ static class Tests
         var r0 = q.OnShot(0, Vector2.zero, Vector2.zero, new Vector2(3f, 3f), 0);
         Check(r0 == CsAim.Training.PathTrainer.Outcome.Continue && q.OnTargetRate == 0f, "big spread: not a fail, but counted off-target");
 
+        // Guide fading: 3 clean full-magazine sprays at a level remove the next guide and restart short
+        var g = new CsAim.Training.PathTrainer { ToleranceDeg = 0.7f }; g.Reset(30);
+        float t = 0;
+        void Clean(int len) { for (int i = 0; i < len; i++) { var rc = new Vector2(0.2f * i, 0); g.OnShot(i, -rc, rc, Vector2.zero, t += 0.1f); } }
+        Clean(10); Clean(15); Clean(20); Clean(25); Clean(30);                 // progressive 10 -> 30
+        Check(g.TargetLength == 30 && g.GuideLevel == CsAim.Training.PathTrainer.Guide.Full && g.CleanAtLevel == 1, $"full length reached, 1 clean at level ({g.CleanAtLevel})");
+        Clean(30); Clean(30);
+        Check(g.GuideLevel == CsAim.Training.PathTrainer.Guide.Line && g.TargetLength == 10 && g.CleanAtLevel == 0, "3 clean full sprays -> marker removed, back to 10 bullets");
+        for (int k = 0; k < 8; k++) Clean(Math.Min(30, 10 + 5 * k));
+        Check(g.GuideLevel == CsAim.Training.PathTrainer.Guide.Blind, "then blind mode");
+
+        // Weak segment: make bullets 11-15 sloppy (still inside tolerance) over two attempts
+        var w = new CsAim.Training.PathTrainer { ToleranceDeg = 0.7f, Progressive = false }; w.Reset(20);
+        for (int a = 0; a < 2; a++)
+            for (int i = 0; i < 20; i++)
+            {
+                var rc = new Vector2(0.3f * i, 0);
+                var off = i >= 10 && i < 15 ? new Vector2(0.5f, 0) : Vector2.zero;
+                w.OnShot(i, -rc + off, rc, Vector2.zero, a * 10 + i * 0.1f);
+            }
+        Check(w.TryWeakestSegment(5, out int ws, out float we) && ws == 10 && Math.Abs(we - 0.5f) < 1e-3, $"weakest segment = bullets 11-15 (got {ws + 1}, {we:0.00})");
+        Check(Math.Abs(w.MeanErrorAt(3)) < 1e-4 && w.MeanErrorAt(25) < 0, "per-bullet mean error tracked");
+
         // Crosshair target is 55% of the mirrored recoil (camera shows 45%)
         var ct = CsAim.Training.PathTrainer.CrosshairTarget(new Vector2(4f, -2f));
         Check(Math.Abs(ct.x + 2.2f) < 1e-4 && Math.Abs(ct.y - 1.1f) < 1e-4, $"crosshair target {ct}");
