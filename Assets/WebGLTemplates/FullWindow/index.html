@@ -14,12 +14,17 @@
     #cfg { position: absolute; bottom: 10px; right: 10px; padding: 7px 12px; border: 0; border-radius: 6px;
            background: #2e7d32; color: #fff; font: 14px system-ui, sans-serif; cursor: pointer; display: none; }
     body.unlocked #cfg { display: block; }
+    #mdl { position: absolute; bottom: 10px; right: 200px; padding: 7px 12px; border: 0; border-radius: 6px;
+           background: #455a64; color: #fff; font: 14px system-ui, sans-serif; cursor: pointer; display: none; }
+    body.unlocked #mdl { display: block; }
   </style>
 </head>
 <body>
   <canvas id="unity-canvas" tabindex="-1"></canvas>
   <button id="cfg" title="autoexec.cfg, config.cfg, cs2_user_convars_0_slot0.vcfg, cs2_user_keys_0_slot0.vcfg…">Загрузить конфиг CS2</button>
   <input id="cfg-files" type="file" accept=".cfg,.vcfg,.txt" multiple hidden>
+  <button id="mdl" title="Модель для текущего оружия: .glb, экспортированный из твоей CS2 через Source 2 Viewer. Остаётся только в этом браузере.">Загрузить модель оружия</button>
+  <input id="mdl-file" type="file" accept=".glb" hidden>
   <div id="loader">
     <div>CS Aim Trainer: загрузка…</div>
     <div id="bar"><div id="fill"></div></div>
@@ -88,6 +93,7 @@
       document.querySelector("#loader").remove();
       unityInstance = unity;
       wireConfigUpload(unity);
+      wireModelUpload(unity);
     }).catch(function (e) {
       document.querySelector("#loader").textContent = "Ошибка загрузки: " + e;
     });
@@ -114,6 +120,24 @@
       if (n === "autoexec.cfg") return 5;
       return 4;
     }
+    // A .glb weapon model from the player's own disk, for the weapon currently in hand. It is
+    // read locally and handed to the game; nothing is uploaded to any server.
+    function wireModelUpload(unity) {
+      var input = document.querySelector("#mdl-file");
+      document.querySelector("#mdl").addEventListener("click", function () { input.click(); });
+      input.addEventListener("change", function () {
+        var f = input.files[0];
+        if (!f) return;
+        f.arrayBuffer().then(function (buf) {
+          var bytes = new Uint8Array(buf), chunk = 0x8000, parts = [];
+          for (var i = 0; i < bytes.length; i += chunk)
+            parts.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunk)));
+          unity.SendMessage("HUD", "LoadModelBase64", btoa(parts.join("")));
+          input.value = "";
+        });
+      });
+    }
+
     function wireConfigUpload(unity) {
       var input = document.querySelector("#cfg-files");
       document.querySelector("#cfg").addEventListener("click", function () { input.click(); });

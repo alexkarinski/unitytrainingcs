@@ -45,6 +45,14 @@ namespace CsAim.Viewmodel
         float _inspectStart = -10f;
         bool _wasReloading;
 
+        // Player-imported model (from their own CS2 install) replacing the procedural gun.
+        GameObject _customModel;
+        Bounds _proceduralBounds;
+        int _loadToken;
+        public string CustomModelStatus { get; private set; } = string.Empty;
+        public bool HasCustomModel => _customModel != null;
+        string CurrentWeaponId => _player != null && _player.Weapon != null ? _player.Weapon.Def.weaponId : string.Empty;
+
         struct ShellState { public Transform t; public Vector3 vel; public Vector3 spin; public float dieAt; }
         readonly List<ShellState> _shells = new List<ShellState>();
         readonly Stack<Transform> _shellPool = new Stack<Transform>();
@@ -70,6 +78,7 @@ namespace CsAim.Viewmodel
 
             player.WeaponChanged += OnWeaponChanged;
             player.Shot += OnShot;
+            CustomWeaponModels.Changed += id => { if (id == CurrentWeaponId) OnWeaponChanged(_player.Weapon); };
             if (player.Weapon != null) OnWeaponChanged(player.Weapon);
         }
 
@@ -86,9 +95,56 @@ namespace CsAim.Viewmodel
             _pivot.SetParent(_rigRoot, false);
             _rig = ViewmodelBuilder.Build(w.Def, _pivot);
             _flash = ViewmodelBuilder.MuzzleFlash(_rig.muzzle);
+            _proceduralBounds = CustomModelLoader.BoundsIn(_rig.weapon, _rig.weapon, r => !IsHandPart(r.transform));
+            _customModel = null;
+            TryLoadCustomModel(w.Def.weaponId);
             _drawStart = Time.time;
             _inspectStart = -10f;
             _kickPos = _kickPosVel = _kickRot = _kickRotVel = Vector3.zero;
+        }
+
+        bool IsHandPart(Transform t) =>
+            _rig != null && (t.IsChildOf(_rig.leftHand) || t.IsChildOf(_rig.rightHand));
+
+        async void TryLoadCustomModel(string weaponId)
+        {
+            int token = ++_loadToken;
+            CustomModelStatus = string.Empty;
+            if (!CustomWeaponModels.TryGetSource(weaponId, out var glb, out var gltfPath)) return;
+
+            CustomModelStatus = "загружается…";
+            GameObject model = null;
+            try
+            {
+                model = await CustomModelLoader.LoadAsync(glb, gltfPath, _rig.weapon);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[CS Aim] custom model for {weaponId} failed: {e.Message}");
+            }
+
+            // The weapon may have changed while loading.
+            if (token != _loadToken || _rig == null || model == null || model.transform.parent != _rig.weapon)
+            {
+                if (model != null) Destroy(model);
+                if (token == _loadToken) CustomModelStatus = "не удалось загрузить файл";
+                return;
+            }
+
+            _customModel = model;
+            RefitCustomModel();
+
+            // Hide the procedural gun; hands and anchors stay.
+            foreach (var r in _rig.weapon.GetComponentsInChildren<Renderer>(true))
+                if (!IsHandPart(r.transform) && !r.transform.IsChildOf(model.transform)) r.enabled = false;
+            CustomModelStatus = "своя модель";
+        }
+
+        /// <summary>Re-applies the automatic fit plus the saved manual corrections.</summary>
+        public void RefitCustomModel()
+        {
+            if (_customModel == null) return;
+            CustomModelLoader.Fit(_customModel, _rig.weapon, _proceduralBounds, CustomWeaponModels.GetFit(CurrentWeaponId));
         }
 
         void OnShot(ShotEvent e)

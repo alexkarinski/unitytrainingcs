@@ -22,6 +22,7 @@ namespace CsAim.UI
         readonly Crosshair _crosshair = new Crosshair { showCone = true };
         string _sensText, _zoomText, _dpiText, _importPath, _importStatus = string.Empty;
         string _cfgPath, _cfgStatus = string.Empty;
+        string _modelPath = string.Empty, _modelStatus = string.Empty;
         GUIStyle _label, _big, _box;
         Font _font, _fontBold;
         Vector2 _weaponScroll, _settingsScroll;
@@ -123,6 +124,84 @@ namespace CsAim.UI
         public void OnPointerUnlocked(string _)
         {
             if (!_menuOpen) SetMenu(true);
+        }
+
+        /// <summary>
+        /// Target of SendMessage("HUD", "LoadModelBase64", ...) from the WebGL page: a .glb the
+        /// player picked from their own disk, for the current weapon. Stays in this browser only.
+        /// </summary>
+        public void LoadModelBase64(string base64)
+        {
+            try
+            {
+                var bytes = System.Convert.FromBase64String(base64);
+                CustomWeaponModels.SaveGlb(_player.Weapon.Def.weaponId, bytes);
+                _modelStatus = $"<color=#6f6>модель для {_player.Weapon.Def.displayName} загружена ({bytes.Length / 1024} КБ)</color>";
+            }
+            catch (System.Exception e)
+            {
+                _modelStatus = $"<color=#f66>не удалось: {e.Message}</color>";
+            }
+        }
+
+        void DrawCustomModelSection()
+        {
+            var def = _player.Weapon.Def;
+            string id = def.weaponId;
+            GUILayout.Label($"<b>Своя модель для {def.displayName}</b> (экспорт из твоей CS2 через Source 2 Viewer, .glb)", _label);
+            string state = _viewmodel.CustomModelStatus.Length > 0 ? _viewmodel.CustomModelStatus : "нет, встроенная модель";
+            GUILayout.Label($"<color=#aaa>сейчас: {state}. Файл хранится только на этом компьютере.</color>", _label);
+
+            if (IsWeb)
+            {
+                GUILayout.Label("<color=#aaa>Кнопка «Загрузить модель оружия» внизу справа страницы.</color>", _label);
+            }
+            else
+            {
+                GUILayout.BeginHorizontal();
+                _modelPath = GUILayout.TextField(_modelPath);
+                if (GUILayout.Button("Загрузить", GUILayout.Width(90)))
+                {
+                    string path = _modelPath.Trim().Trim('"');
+                    if (File.Exists(path)) { CustomWeaponModels.ImportFile(id, path); _modelStatus = "<color=#6f6>загружено</color>"; }
+                    else _modelStatus = "<color=#f66>файл не найден</color>";
+                }
+                GUILayout.EndHorizontal();
+            }
+            if (_modelStatus.Length > 0) GUILayout.Label(_modelStatus, _label);
+
+            if (!CustomWeaponModels.Has(id)) return;
+
+            // Manual corrections for when the automatic fit picks the wrong way round.
+            var fit = CustomWeaponModels.GetFit(id);
+            bool changed = false;
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("развернуть 180°")) { fit.euler.y += 180f; changed = true; }
+            if (GUILayout.Button("перевернуть")) { fit.euler.z += 180f; changed = true; }
+            if (GUILayout.Button("X+90")) { fit.euler.x += 90f; changed = true; }
+            if (GUILayout.Button("Y+90")) { fit.euler.y += 90f; changed = true; }
+            if (GUILayout.Button("Z+90")) { fit.euler.z += 90f; changed = true; }
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("меньше")) { fit.scale /= 1.05f; changed = true; }
+            if (GUILayout.Button("больше")) { fit.scale *= 1.05f; changed = true; }
+            if (GUILayout.Button("←")) { fit.offset.x -= 0.5f; changed = true; }
+            if (GUILayout.Button("→")) { fit.offset.x += 0.5f; changed = true; }
+            if (GUILayout.Button("↑")) { fit.offset.y += 0.5f; changed = true; }
+            if (GUILayout.Button("↓")) { fit.offset.y -= 0.5f; changed = true; }
+            if (GUILayout.Button("вперёд")) { fit.offset.z += 0.5f; changed = true; }
+            if (GUILayout.Button("назад")) { fit.offset.z -= 0.5f; changed = true; }
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("сбросить подгонку")) { fit = ModelFit.Default; changed = true; }
+            if (GUILayout.Button("удалить модель")) { CustomWeaponModels.Remove(id); _modelStatus = string.Empty; return; }
+            GUILayout.EndHorizontal();
+            if (changed)
+            {
+                fit.euler = new Vector3(Mathf.Repeat(fit.euler.x, 360f), Mathf.Repeat(fit.euler.y, 360f), Mathf.Repeat(fit.euler.z, 360f));
+                CustomWeaponModels.SetFit(id, fit);
+                _viewmodel.RefitCustomModel();
+            }
         }
 
         /// <summary>Called by the WebGL page when the browser grants pointer lock.</summary>
@@ -541,6 +620,8 @@ namespace CsAim.UI
                     _viewmodel.offset = off;
                     SaveViewmodelPrefs();
                 }
+                GUILayout.Space(8);
+                DrawCustomModelSection();
             }
             GUILayout.EndScrollView();
             GUILayout.EndVertical();
