@@ -30,7 +30,8 @@ namespace CsAim.Viewmodel
     /// <summary>
     /// Builds stylised first-person weapons and gloved arms from primitives, in Source units
     /// (an AK is ~35 units long). Original geometry; no game assets are used.
-    /// Everything goes on the viewmodel layer with colliders removed, so bullets never hit it.
+    /// Everything goes on the viewmodel layer with colliders removed immediately (a deferred Destroy
+    /// would leave a shell's collider alive for the rest of the frame, in front of the next bullet).
     /// </summary>
     public static class ViewmodelBuilder
     {
@@ -257,7 +258,7 @@ namespace CsAim.Viewmodel
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             go.name = name;
-            Object.Destroy(go.GetComponent<Collider>());
+            Object.DestroyImmediate(go.GetComponent<Collider>());
             go.transform.SetParent(parent, false);
             Prepare(go, c);
             go.transform.localScale = new Vector3(thickness, 1f, thickness);
@@ -285,7 +286,7 @@ namespace CsAim.Viewmodel
             for (int i = 0; i < 3; i++)
             {
                 var q = GameObject.CreatePrimitive(PrimitiveType.Quad);
-                Object.Destroy(q.GetComponent<Collider>());
+                Object.DestroyImmediate(q.GetComponent<Collider>());
                 q.transform.SetParent(root, false);
                 // One star facing the camera plus two petals lying along the barrel.
                 if (i == 2)
@@ -321,7 +322,7 @@ namespace CsAim.Viewmodel
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
             go.name = name;
-            Object.Destroy(go.GetComponent<Collider>());
+            Object.DestroyImmediate(go.GetComponent<Collider>());
             go.transform.SetParent(parent, false);
             go.transform.localPosition = pos;
             go.transform.localRotation = Quaternion.Euler(euler);
@@ -335,7 +336,7 @@ namespace CsAim.Viewmodel
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             go.name = name;
-            Object.Destroy(go.GetComponent<Collider>());
+            Object.DestroyImmediate(go.GetComponent<Collider>());
             go.transform.SetParent(parent, false);
             go.transform.localPosition = center;
             go.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
@@ -348,7 +349,7 @@ namespace CsAim.Viewmodel
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = name;
-            Object.Destroy(go.GetComponent<Collider>());
+            Object.DestroyImmediate(go.GetComponent<Collider>());
             go.transform.SetParent(parent, false);
             go.transform.localPosition = pos;
             go.transform.localScale = Vector3.one * d;

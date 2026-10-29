@@ -20,8 +20,14 @@ namespace CsAim.Viewmodel
         public bool leftHanded;
         public bool visible = true;
 
-        /// <summary>Base placement so CS2's default offsets look right.</summary>
-        static readonly Vector3 BasePosition = new Vector3(3.2f, -6.3f, 12.5f);
+        /// <summary>
+        /// Base placement (camera space, units) so CS2's default offsets look right at viewmodel_fov 68:
+        /// rifles sit in the lower right with the grip hand at the corner and the muzzle just below
+        /// and right of the crosshair; pistols closer to the centre.
+        /// </summary>
+        static Vector3 BasePosition(WeaponKind kind) =>
+            kind == WeaponKind.Pistol ? new Vector3(4.5f, -4.6f, 17f) : new Vector3(7f, -6f, 22f);
+        const float InwardYaw = -3f;
 
         PlayerController _player;
         Camera _vmCamera;
@@ -120,7 +126,8 @@ namespace CsAim.Viewmodel
             if (_rig.suppressor != null) _rig.suppressor.gameObject.SetActive(w.AltMode);
 
             _vmCamera.fieldOfView = 2f * Mathf.Atan(Mathf.Tan(viewmodelFov * 0.5f * Mathf.Deg2Rad) * 0.75f) * Mathf.Rad2Deg;
-            _rigRoot.localPosition = BasePosition + new Vector3(offset.x - 2.5f, offset.y, offset.z + 1.5f);
+            _rigRoot.localPosition = BasePosition(_rig.kind) + new Vector3(offset.x - 2.5f, offset.y, offset.z + 1.5f);
+            _rigRoot.localRotation = Quaternion.Euler(0f, InwardYaw, 0f);
 
             // --- springs: recoil kick
             Spring(ref _kickPos, ref _kickPosVel, 260f, 26f, dt);

@@ -59,6 +59,10 @@ namespace CsAim.Player
         public bool AttackHeld => InputEnabled && Bindings.Held(InputAction.Attack);
 
         public event Action<ShotEvent> Shot;
+
+        /// <summary>What bullets can hit: the world and targets, never the viewmodel (layer 31) or
+        /// effects on Ignore Raycast (impact markers).</summary>
+        const int BulletMask = Physics.DefaultRaycastLayers & ~(1 << 31);
         public event Action<WeaponController> WeaponChanged;
 
         readonly SourceMovement _move = new SourceMovement();
@@ -296,7 +300,7 @@ namespace CsAim.Player
 
             var e = new ShotEvent { shot = info, eyeAngles = _eyeAngles, origin = origin, direction = dir };
 
-            if (Physics.Raycast(origin, dir, out var hit, Weapon.Def.range, ~0, QueryTriggerInteraction.Ignore))
+            if (Physics.Raycast(origin, dir, out var hit, Weapon.Def.range, BulletMask, QueryTriggerInteraction.Ignore))
             {
                 e.hitSomething = true;
                 e.hit = hit;

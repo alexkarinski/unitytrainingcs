@@ -48,7 +48,8 @@ namespace CsAim.Training
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
             go.name = "Impact";
-            Destroy(go.GetComponent<Collider>());
+            go.layer = 2;   // Ignore Raycast
+            DestroyImmediate(go.GetComponent<Collider>());
             return go;
         }
 
